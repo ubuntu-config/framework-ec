@@ -61,6 +61,16 @@
 			power-good-pin = <&gpio_slp_s3_l>;
 			sensor = <&temp_cpu>;
 		};
+		/*
+		 * Reported to the host only. Without thresholds it does not
+		 * take part in fan control, throttling or shutdown. Without a
+		 * power-good pin it is read in every power state, because its
+		 * value comes from the charger task and not from the bus. It
+		 * is the last sensor, so that the others keep their indices.
+		 */
+		battery-temp {
+			sensor = <&battery_temp>;
+		};
 	};
 
 	typec-port {
