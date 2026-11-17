@@ -842,8 +842,8 @@ test_static int test_low_battery_hostevents(void)
 	return EC_SUCCESS;
 }
 
-test_static int battery_sustainer_set(int version, int8_t lower, int8_t upper,
-				      enum ec_charge_control_flag flags)
+test_static int sustainer_set_via_hc(int version, int8_t lower, int8_t upper,
+				     enum ec_charge_control_flag flags)
 {
 	struct ec_params_charge_control p;
 
@@ -874,7 +874,7 @@ test_static int test_hc_charge_control_v2(void)
 	test_setup(1);
 
 	ccprintf("Test v2 command\n");
-	rv = battery_sustainer_set(2, 79, 80, 0);
+	rv = sustainer_set_via_hc(2, 79, 80, 0);
 	TEST_ASSERT(rv == EC_RES_SUCCESS);
 	rv = battery_sustainer_get(2, &r);
 	TEST_ASSERT(r.sustain_soc.lower == 79);
@@ -882,15 +882,15 @@ test_static int test_hc_charge_control_v2(void)
 	TEST_ASSERT(r.flags == 0);
 
 	ccprintf("Test v2 lower > upper\n");
-	rv = battery_sustainer_set(2, 80, 79, 0);
+	rv = sustainer_set_via_hc(2, 80, 79, 0);
 	TEST_ASSERT(rv == EC_RES_INVALID_PARAM);
 
 	ccprintf("Test v2 lower < 0\n");
-	rv = battery_sustainer_set(2, -100, 80, 0);
+	rv = sustainer_set_via_hc(2, -100, 80, 0);
 	TEST_ASSERT(rv == EC_RES_INVALID_PARAM);
 
 	ccprintf("Test v2 100 < upper\n");
-	rv = battery_sustainer_set(2, -100, 80, 0);
+	rv = sustainer_set_via_hc(2, -100, 80, 0);
 	TEST_ASSERT(rv == EC_RES_INVALID_PARAM);
 
 	return EC_SUCCESS;
@@ -905,7 +905,7 @@ test_static int test_hc_charge_control_v3(void)
 	test_setup(1);
 
 	ccprintf("Test v3 command\n");
-	rv = battery_sustainer_set(3, 79, 80, 0);
+	rv = sustainer_set_via_hc(3, 79, 80, 0);
 	TEST_ASSERT(rv == EC_RES_SUCCESS);
 	rv = battery_sustainer_get(3, &r);
 	TEST_ASSERT(r.sustain_soc.lower == 79);
@@ -913,7 +913,7 @@ test_static int test_hc_charge_control_v3(void)
 	TEST_ASSERT(r.flags == 0);
 
 	ccprintf("Test v3 command with flags\n");
-	rv = battery_sustainer_set(3, 79, 80, EC_CHARGE_CONTROL_FLAG_NO_IDLE);
+	rv = sustainer_set_via_hc(3, 79, 80, EC_CHARGE_CONTROL_FLAG_NO_IDLE);
 	TEST_ASSERT(rv == EC_RES_SUCCESS);
 	rv = battery_sustainer_get(3, &r);
 	TEST_ASSERT(r.sustain_soc.lower == 79);
@@ -921,15 +921,15 @@ test_static int test_hc_charge_control_v3(void)
 	TEST_ASSERT(r.flags == EC_CHARGE_CONTROL_FLAG_NO_IDLE);
 
 	ccprintf("Test v3 lower > upper\n");
-	rv = battery_sustainer_set(3, 80, 79, 0);
+	rv = sustainer_set_via_hc(3, 80, 79, 0);
 	TEST_ASSERT(rv == EC_RES_INVALID_PARAM);
 
 	ccprintf("Test v3 lower < 0\n");
-	rv = battery_sustainer_set(3, -100, 80, 0);
+	rv = sustainer_set_via_hc(3, -100, 80, 0);
 	TEST_ASSERT(rv == EC_RES_INVALID_PARAM);
 
 	ccprintf("Test v3 100 < upper\n");
-	rv = battery_sustainer_set(3, 79, 101, 0);
+	rv = sustainer_set_via_hc(3, 79, 101, 0);
 	TEST_ASSERT(rv == EC_RES_INVALID_PARAM);
 
 	/* Test illegal command */
@@ -957,7 +957,7 @@ test_static int run_battery_sustainer_no_idle(int version)
 	test_setup(1);
 
 	/* Enable sustainer */
-	rv = battery_sustainer_set(version, 79, 80, flags);
+	rv = sustainer_set_via_hc(version, 79, 80, flags);
 	TEST_ASSERT(rv == EC_RES_SUCCESS);
 
 	/* Check mode transition as the SoC changes. */
@@ -1010,7 +1010,7 @@ test_static int run_battery_sustainer_no_idle(int version)
 	is_full = 1;
 	wait_charging_state();
 	/* Enable sustainer. */
-	rv = battery_sustainer_set(version, 79, 80, flags);
+	rv = sustainer_set_via_hc(version, 79, 80, flags);
 	TEST_ASSERT(rv == EC_RES_SUCCESS);
 	wait_charging_state();
 	TEST_ASSERT(get_chg_ctrl_mode() == CHARGE_CONTROL_DISCHARGE);
@@ -1027,7 +1027,7 @@ test_static int run_battery_sustainer_no_idle(int version)
 	gpio_set_level(GPIO_AC_PRESENT, 1);
 	wait_charging_state();
 	/* Enable sustainer. */
-	rv = battery_sustainer_set(version, 79, 80, flags);
+	rv = sustainer_set_via_hc(version, 79, 80, flags);
 	TEST_ASSERT(rv == EC_RES_SUCCESS);
 	wait_charging_state();
 	TEST_ASSERT(get_chg_ctrl_mode() == CHARGE_CONTROL_DISCHARGE);
@@ -1055,10 +1055,10 @@ test_static int run_battery_sustainer_with_idle(int version)
 
 	/* Enable sustainer */
 	if (version > 2)
-		rv = battery_sustainer_set(version, 79, 80, 0);
+		rv = sustainer_set_via_hc(version, 79, 80, 0);
 	else
 		/* V2 needs lower == upper to enable IDLE. */
-		rv = battery_sustainer_set(version, 80, 80, 0);
+		rv = sustainer_set_via_hc(version, 80, 80, 0);
 	TEST_ASSERT(rv == EC_RES_SUCCESS);
 	TEST_ASSERT(battery_sustainer_enabled());
 
@@ -1106,12 +1106,12 @@ test_static int run_battery_sustainer_with_idle(int version)
 	TEST_ASSERT(get_chg_ctrl_mode() == CHARGE_CONTROL_NORMAL);
 
 	/* Re-enable sustainer when it's already running */
-	rv = battery_sustainer_set(version, 89, 90, 0);
+	rv = sustainer_set_via_hc(version, 89, 90, 0);
 	TEST_ASSERT(rv == EC_RES_SUCCESS);
 	TEST_ASSERT(battery_sustainer_enabled());
 
 	/* Disable sustainer */
-	rv = battery_sustainer_set(version, -1, -1, 0);
+	rv = sustainer_set_via_hc(version, -1, -1, 0);
 	TEST_ASSERT(rv == EC_RES_SUCCESS);
 	TEST_ASSERT(!battery_sustainer_enabled());
 
