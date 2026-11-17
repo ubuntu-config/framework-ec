@@ -26,9 +26,10 @@
 // DECLARE_FAKE_VALUE_FUNC(int, crec_flash_unprotected_read, int, int, char *);
 
 namespace {
+static_assert(DT_NODE_EXISTS(DT_ALIAS(test_dsp_client)),
+              "Missing alias 'test_dsp_client'");
 constexpr const struct device* kClient =
-    DEVICE_DT_GET_OR_NULL(DT_ALIAS(test_dsp_client));
-static_assert(kClient != nullptr, "Missing alias 'test_dsp_client'");
+    DEVICE_DT_GET(DT_ALIAS(test_dsp_client));
 
 constexpr const struct i2c_dt_spec kClientBusSpec =
     I2C_DT_SPEC_GET(DT_ALIAS(test_dsp_client));
