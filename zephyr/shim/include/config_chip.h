@@ -3403,6 +3403,9 @@ BUILD_ASSERT((DT_NUM_INST_STATUS_OKAY(mps_mp2964)) == 1,
 #ifdef CONFIG_PLATFORM_EC_CUSTOMIZED_DESIGN
 #define CONFIG_CUSTOMIZED_DESIGN
 #define CONFIG_FAN_INIT_SPEED 20
+#else
+/* The default of include/config.h, which the #undef above removes. */
+#define CONFIG_FAN_INIT_SPEED 100
 #endif
 
 #undef CONFIG_GPU
