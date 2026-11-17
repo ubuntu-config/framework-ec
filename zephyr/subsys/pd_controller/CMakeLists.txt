@@ -2,19 +2,23 @@
 
 zephyr_library_include_directories(include)
 
-# TODO: Framework Workaround
-#zephyr_library_sources_ifdef(CONFIG_USB_PD_ALTMODE_INTEL
-#	pd_task_intel_altmode.c)
-#zephyr_library_sources_ifndef(CONFIG_USB_PD_ALTMODE_INTEL
-#	pdc_pmc_debug.c)
+# A standalone PD chip has its own implementation of the host commands and of
+# get_pd_control_flags().
+if (NOT CONFIG_PLATFORM_EC_STANDALONE_PD_CHIP)
+  zephyr_library_sources_ifdef(CONFIG_USB_PD_ALTMODE_INTEL
+    pd_task_intel_altmode.c)
+  zephyr_library_sources_ifndef(CONFIG_USB_PD_ALTMODE_INTEL
+    pdc_pmc_debug.c)
+endif()
 zephyr_library_sources_ifdef(CONFIG_PLATFORM_EC_USBC_RETIMER_FW_UPDATE
 	retimer_fw_update.c)
 zephyr_library_sources_ifdef(CONFIG_USB_PDC_POWER_MGMT
 	pdc_power_mgmt.c)
 zephyr_library_sources_ifdef(CONFIG_USB_PDC_POWER_MGMT
 	pdc_console.c)
-# TODO: Framework Workaround
-#zephyr_library_sources(pdc_host_cmd.c)
+if (NOT CONFIG_PLATFORM_EC_STANDALONE_PD_CHIP)
+  zephyr_library_sources(pdc_host_cmd.c)
+endif()
 zephyr_library_sources_ifdef(CONFIG_PLATFORM_EC_HOSTCMD_TYPEC_CONTROL
 	pdc_stub.c)
 zephyr_library_sources_ifdef(CONFIG_USB_PDC_POWER_MGMT
