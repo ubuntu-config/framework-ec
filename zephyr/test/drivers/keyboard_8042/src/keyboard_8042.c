@@ -34,11 +34,14 @@ ZTEST(keyboard_8042, test_console_cmd__typematic__status)
 	outbuffer =
 		shell_backend_dummy_get_output(get_ec_shell(), &buffer_size);
 
-	/* Check for some expected lines based off default typematic state */
+	/*
+	 * Check for some expected lines based off default typematic state,
+	 * Framework's DEFAULT_TYPEMATIC_VALUE of common/keyboard_8042.c.
+	 */
 	zassert_true(buffer_size > 0);
-	zassert_ok(!strstr(outbuffer, "From host:   0x2b"));
+	zassert_ok(!strstr(outbuffer, "From host:   0x23"));
 	zassert_ok(!strstr(outbuffer, "First delay: 500 ms"));
-	zassert_ok(!strstr(outbuffer, "Inter delay:  91 ms"));
+	zassert_ok(!strstr(outbuffer, "Inter delay:  45 ms"));
 	zassert_ok(
 		!strstr(outbuffer, "Repeat scan code: {0x01, 0x02, 0x03, }"));
 }

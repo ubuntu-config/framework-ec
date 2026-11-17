@@ -603,12 +603,13 @@ test_static int test_typematic(void)
 	VERIFY_LPC_CHAR_DELAY("\x81", 300);
 
 	/*
-	 * 500ms delay, 10.9 chars / sec.
+	 * 500ms delay, 21.8 chars / sec, Framework's DEFAULT_TYPEMATIC_VALUE of
+	 * common/keyboard_8042.c.
 	 */
 	RESET_8042_DEF();
 
 	press_key(1, 1, 1);
-	VERIFY_LPC_CHAR_DELAY("\x01\x01\x01", 650);
+	VERIFY_LPC_CHAR_DELAY("\x01\x01\x01\x01\x01", 650);
 	press_key(1, 1, 0);
 	VERIFY_LPC_CHAR_DELAY("\x81", 200);
 
