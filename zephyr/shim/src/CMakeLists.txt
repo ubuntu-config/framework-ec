@@ -29,8 +29,12 @@ if (no_libgcc AND CONFIG_INPUT)
   zephyr_library_sources(popcountsi2.c)
 endif()
 
-# TODO: Framework workaround
-# zephyr_library_sources_ifdef(CONFIG_PLATFORM_EC_USB_PD_CONTROLLER pdc_shim.c)
+# A standalone PD chip has its own implementation of the pd_* functions of
+# pdc_shim.c.
+if (CONFIG_PLATFORM_EC_USB_PD_CONTROLLER AND
+    NOT CONFIG_PLATFORM_EC_STANDALONE_PD_CHIP)
+  zephyr_library_sources(pdc_shim.c)
+endif()
 zephyr_library_sources_ifdef(CONFIG_PLATFORM_EC_USBC_RETIMER_ANX7452 anx7452_usb_mux.c)
 zephyr_library_sources_ifdef(CONFIG_NAMED_ADC_CHANNELS      adc.c)
 zephyr_library_sources_ifdef(CONFIG_PLATFORM_EC_BATTERY
