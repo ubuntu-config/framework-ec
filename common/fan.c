@@ -683,9 +683,11 @@ static void pwm_fan_stop(void)
 	 * continuing to run CPU heavy tasks for value added features
 	 * causing excessive heat.
 	 */
+#ifdef CONFIG_POWER_S0IX
 	if (power_get_state() == POWER_S0ix ||
 		power_get_state() == POWER_S0S0ix)
 		return;
+#endif
 
 	pwm_fan_control(0); /* crosbug.com/p/8097 */
 }
