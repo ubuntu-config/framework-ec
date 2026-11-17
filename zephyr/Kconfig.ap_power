@@ -30,6 +30,7 @@ config PLATFORM_EC_POWER_BUTTON_INIT_TIMEOUT
 	depends on HAS_TASK_POWERBTN || HAS_TASK_POWERBTN_CUSTOMER
 	# The PD Controller needs more time to get current power contract
 	default 4 if PLATFORM_EC_USB_PD_CONTROLLER
+	default 1
 	help
 	  Sets the maximum time, in seconds, before the power button
 	  task stops waiting for conditions to be OK to start
