@@ -31,7 +31,9 @@ config PLATFORM_EC_STANDALONE_PD_CHIP
 	  Enable if project use the standalone PD chip instead of the structure of
 	  TCPC + TCPM.
 
-# if PLATFORM_EC_USBC
+# A standalone PD chip uses the options until the next "if PLATFORM_EC_USBC",
+# without the USB-C stack of the EC.
+if PLATFORM_EC_USBC || PLATFORM_EC_STANDALONE_PD_CHIP
 
 rsource "Kconfig.pd_int_shared"
 rsource "Kconfig.pd_meas_vbus"
@@ -150,6 +152,8 @@ config PLATFORM_EC_USB_PD_PULLUP
 	  Default pull-up value on the USB-C ports when they are used as source.
 	  Valid values are 0 (USB default current), 1 (1.5A), and 2 (3.0A). See
 	  enum tcpc_rp_value.
+
+endif # PLATFORM_EC_USBC || PLATFORM_EC_STANDALONE_PD_CHIP
 
 if PLATFORM_EC_USBC
 
