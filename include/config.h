@@ -2737,12 +2737,14 @@
 /*
  * List of host commands whose debug output will be suppressed
  * By default remove periodic commands and commands called often (SENSE).
+ * The host reads the fan target every time a program reads fan1_target of
+ * the cros_ec hwmon device.
  */
 #define CONFIG_SUPPRESSED_HOST_COMMANDS                                        \
 	EC_CMD_CONSOLE_SNAPSHOT, EC_CMD_CONSOLE_READ, EC_CMD_USB_PD_DISCOVERY, \
 		EC_CMD_USB_PD_POWER_INFO, EC_CMD_PD_GET_LOG_ENTRY,             \
 		EC_CMD_MOTION_SENSE_CMD, EC_CMD_GET_NEXT_EVENT,                \
-		EC_CMD_GET_UPTIME_INFO
+		EC_CMD_GET_UPTIME_INFO, EC_CMD_PWM_GET_FAN_TARGET_RPM
 
 /*****************************************************************************/
 

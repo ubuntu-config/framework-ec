@@ -42,6 +42,12 @@ config LOG_PRINTK
 config SYSTEM_WORKQUEUE_PRIORITY
 	default 27
 
+#
+# Room for every command in CONFIG_SUPPRESSED_HOST_COMMANDS of include/config.h.
+#
+config EC_HOST_CMD_LOG_SUPPRESSED_NUMBER
+	default 9
+
 # eSPI is chatty, so default to Error only
 choice ESPI_LOG_LEVEL_CHOICE
 	default ESPI_LOG_LEVEL_ERR
