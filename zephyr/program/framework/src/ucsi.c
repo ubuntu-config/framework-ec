@@ -583,7 +583,7 @@ void check_ucsi_event_from_host(void)
 				if (command == UCSI_CMD_GET_ERROR_STATUS) {
 					uint16_t error_information =
 						(pd_chip_ucsi_info[i].message_in[1] << 8) |
-						pd_chip_ucsi_info[i].message_in[1];
+						pd_chip_ucsi_info[i].message_in[0];
 					if (error_information) {
 						message_in = pd_chip_ucsi_info[i].message_in;
 						cci = &pd_chip_ucsi_info[i].cci;
