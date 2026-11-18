@@ -17,8 +17,56 @@
 #include "temp_sensor/temp_sensor.h"
 #endif
 
+#define CPRINTS(format, args...) cprints(CC_THERMAL, format, ##args)
+
+/*
+ * Polls of a channel which have to fail in a row before the channel counts as
+ * lost. Fewer failed polls keep reporting the last reading.
+ */
+#define F75303_LOST_AFTER_FAILED_POLLS 3
+
 static int temps[F75303_IDX_COUNT];
+/* Whether a poll of the channel has succeeded since the EC started. */
+static bool has_temp[F75303_IDX_COUNT];
+/* Polls of the channel which failed since the last one which succeeded. */
+static uint8_t failed_polls[F75303_IDX_COUNT];
 static int8_t fake_temp[F75303_IDX_COUNT];
+
+/**
+ * Records the result of a poll of channel idx: rv is its error code, and temp
+ * the temperature it read when rv is EC_SUCCESS.
+ */
+static void record_poll(int idx, int rv, int temp)
+{
+	if (rv == EC_SUCCESS) {
+		if (failed_polls[idx] >= F75303_LOST_AFTER_FAILED_POLLS)
+			CPRINTS("F75303 channel %d readable again", idx);
+		temps[idx] = temp;
+		has_temp[idx] = true;
+		failed_polls[idx] = 0;
+		return;
+	}
+
+	if (failed_polls[idx] < F75303_LOST_AFTER_FAILED_POLLS &&
+	    ++failed_polls[idx] == F75303_LOST_AFTER_FAILED_POLLS)
+		CPRINTS("F75303 channel %d lost, error %d", idx, rv);
+}
+
+/**
+ * Returns EC_SUCCESS when channel idx has a temperature to report, else the
+ * error to report instead: EC_ERROR_HW_INTERNAL for a lost channel, and
+ * EC_ERROR_NOT_POWERED for one which has not been read yet.
+ */
+static int reading_status(int idx)
+{
+	if (fake_temp[idx] != -1)
+		return EC_SUCCESS;
+	if (failed_polls[idx] >= F75303_LOST_AFTER_FAILED_POLLS)
+		return EC_ERROR_HW_INTERNAL;
+	if (!has_temp[idx])
+		return EC_ERROR_NOT_POWERED;
+	return EC_SUCCESS;
+}
 
 #ifndef CONFIG_ZEPHYR
 /**
@@ -105,6 +153,8 @@ static int get_temp(int sensor, const int offset, int *temp)
 
 int f75303_get_val(int idx, int *temp)
 {
+	int rv;
+
 	if (idx < 0 || F75303_IDX_COUNT <= idx)
 		return EC_ERROR_INVAL;
 
@@ -113,14 +163,24 @@ int f75303_get_val(int idx, int *temp)
 		return EC_SUCCESS;
 	}
 
+	rv = reading_status(idx);
+	if (rv != EC_SUCCESS)
+		return rv;
+
 	*temp = temps[idx];
 	return EC_SUCCESS;
 }
 
 int f75303_get_val_k(int idx, int *temp_k_ptr)
 {
+	int rv;
+
 	if (idx >= F75303_IDX_COUNT)
 		return EC_ERROR_INVAL;
+
+	rv = reading_status(idx);
+	if (rv != EC_SUCCESS)
+		return rv;
 
 	*temp_k_ptr = MILLI_KELVIN_TO_KELVIN(temps[idx]);
 	return EC_SUCCESS;
@@ -128,8 +188,14 @@ int f75303_get_val_k(int idx, int *temp_k_ptr)
 
 int f75303_get_val_mk(int idx, int *temp_mk_ptr)
 {
+	int rv;
+
 	if (idx >= F75303_IDX_COUNT)
 		return EC_ERROR_INVAL;
+
+	rv = reading_status(idx);
+	if (rv != EC_SUCCESS)
+		return rv;
 
 	*temp_mk_ptr = temps[idx];
 	return EC_SUCCESS;
@@ -138,9 +204,15 @@ int f75303_get_val_mk(int idx, int *temp_mk_ptr)
 #ifndef CONFIG_ZEPHYR
 static void f75303_sensor_poll(void)
 {
-	get_temp(F75303_TEMP_LOCAL_REGISTER, &temps[F75303_IDX_LOCAL]);
-	get_temp(F75303_TEMP_REMOTE1_REGISTER, &temps[F75303_IDX_REMOTE1]);
-	get_temp(F75303_TEMP_REMOTE2_REGISTER, &temps[F75303_IDX_REMOTE2]);
+	int temp = 0;
+	int rv;
+
+	rv = get_temp(F75303_TEMP_LOCAL_REGISTER, &temp);
+	record_poll(F75303_IDX_LOCAL, rv, temp);
+	rv = get_temp(F75303_TEMP_REMOTE1_REGISTER, &temp);
+	record_poll(F75303_IDX_REMOTE1, rv, temp);
+	rv = get_temp(F75303_TEMP_REMOTE2_REGISTER, &temp);
+	record_poll(F75303_IDX_REMOTE2, rv, temp);
 }
 DECLARE_HOOK(HOOK_SECOND, f75303_sensor_poll, HOOK_PRIO_TEMP_SENSOR);
 #else
@@ -166,9 +238,7 @@ void f75303_update_temperature(int idx)
 		rv = EC_ERROR_INVAL;
 	}
 
-	if (rv == EC_SUCCESS) {
-		temps[idx] = temp_reg;
-	}
+	record_poll(idx, rv, temp_reg);
 
 	if (fake_temp[idx] != -1)
 		temps[idx] = KELVIN_TO_MILLI_KELVIN(C_TO_K(fake_temp[idx]));

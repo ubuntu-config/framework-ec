@@ -558,6 +558,14 @@ tests:
     - prj.conf
     - dps/prj.conf
     - ec_host_cmd.conf
+  drivers.f75303:
+    extra_configs:
+    - CONFIG_LINK_TEST_SUITE_F75303=y
+    extra_conf_files:
+    - prj.conf
+    extra_dtc_overlay_files:
+    - ./boards/native_sim.overlay
+    - ./f75303/f75303.dts
   drivers.fan:
     extra_configs:
     - CONFIG_LINK_TEST_SUITE_FAN=y
