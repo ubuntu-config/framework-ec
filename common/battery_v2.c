@@ -321,8 +321,6 @@ void update_dynamic_battery_info(void)
 
 	curr = charge_get_status();
 	tmp = 0;
-	if (curr->ac)
-		tmp |= EC_BATT_FLAG_AC_PRESENT;
 
 	if (curr->batt.is_present == BP_YES) {
 		tmp |= EC_BATT_FLAG_BATT_PRESENT;
@@ -499,6 +497,26 @@ void update_dynamic_battery_info(void)
 
 	if (battery_is_cut_off())
 		tmp |= EC_BATT_FLAG_CUT_OFF;
+
+	/*
+	 * The charger task reads curr->ac at the start of its loop, before its
+	 * transfers to the charger and the battery. When AC changes during
+	 * them, extpower_handle_update() sets the AC flag of the memory map
+	 * and sends the AC host event, and curr->ac would set the flag back
+	 * until the next loop, without an event. So the flag follows
+	 * extpower_is_present(), read after the last transfer of this
+	 * function: extpower_handle_update() runs in the system work queue,
+	 * which has a lower priority than the charger task, so it cannot run
+	 * between this read and battery_memmap_refresh() below. A battery
+	 * client keeps curr->ac, which is 0 while the base powers the system
+	 * although extpower_is_present() reports AC then too.
+	 */
+	if (IS_ENABLED(CONFIG_EC_EC_COMM_BATTERY_CLIENT)) {
+		if (curr->ac)
+			tmp |= EC_BATT_FLAG_AC_PRESENT;
+	} else if (extpower_is_present()) {
+		tmp |= EC_BATT_FLAG_AC_PRESENT;
+	}
 
 	/* Tell the AP to re-read battery status if charge state changes */
 	if (bd->flags != tmp)
