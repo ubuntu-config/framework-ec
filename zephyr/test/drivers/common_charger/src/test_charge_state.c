@@ -5,8 +5,11 @@
 
 #include "battery.h"
 #include "charge_state.h"
+#include "extpower.h"
+#include "host_command.h"
 #include "math_util.h"
 #include "test/drivers/test_state.h"
+#include "test/drivers/utils.h"
 
 #include <zephyr/ztest.h>
 
@@ -126,4 +129,66 @@ ZTEST(charge_state, test_minimum_current_limit)
 		      " but current limit is %d (capped to %d)",
 		      96, charger_current_limit,
 		      CONFIG_PLATFORM_EC_CHARGER_MIN_INPUT_CURRENT_LIMIT);
+}
+
+struct charge_state_ac_fixture {
+	bool ac;
+};
+
+static void *ac_setup(void)
+{
+	static struct charge_state_ac_fixture fixture;
+
+	return &fixture;
+}
+
+static void ac_before(void *f)
+{
+	struct charge_state_ac_fixture *fixture = f;
+
+	fixture->ac = extpower_is_present();
+}
+
+static void ac_after(void *f)
+{
+	struct charge_state_ac_fixture *fixture = f;
+
+	/* The charger task reads AC presence again while this waits. */
+	set_ac_enabled(fixture->ac);
+}
+
+ZTEST_SUITE(charge_state_ac, drivers_predicate_post_main, ac_setup, ac_before,
+	    ac_after, NULL);
+
+/*
+ * The charger task reads AC presence at the start of its loop, and AC can
+ * change before the loop updates the battery information. The AC flag of the
+ * memory map has to keep the state which the AC host event announced.
+ */
+ZTEST(charge_state_ac, test_ac_flag_after_connect_during_charger_loop)
+{
+	uint8_t *flags = host_get_memmap(EC_MEMMAP_BATT_FLAG);
+
+	set_ac_enabled(true);
+	zassert_true(*flags & EC_BATT_FLAG_AC_PRESENT);
+
+	/* The charger task read AC presence before the connect. */
+	charge_get_status()->ac = 0;
+	update_dynamic_battery_info();
+
+	zassert_true(*flags & EC_BATT_FLAG_AC_PRESENT);
+}
+
+ZTEST(charge_state_ac, test_ac_flag_after_disconnect_during_charger_loop)
+{
+	uint8_t *flags = host_get_memmap(EC_MEMMAP_BATT_FLAG);
+
+	set_ac_enabled(false);
+	zassert_false(*flags & EC_BATT_FLAG_AC_PRESENT);
+
+	/* The charger task read AC presence before the disconnect. */
+	charge_get_status()->ac = 1;
+	update_dynamic_battery_info();
+
+	zassert_false(*flags & EC_BATT_FLAG_AC_PRESENT);
 }
