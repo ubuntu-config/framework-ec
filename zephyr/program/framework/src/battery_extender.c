@@ -102,10 +102,19 @@ static void battery_percentage_control(void)
 		return;
 	}
 
+	/*
+	 * Without a limit of its own, the EC clears the sustainer once, when
+	 * the limit changes to none, and old_charger_limit is then 100. This
+	 * function runs every second, so clearing it on every pass would also
+	 * clear the thresholds which the host sets with EC_CMD_CHARGE_CONTROL.
+	 */
 	if (!charging_maximum_level ||
 		charging_maximum_level == 100) {
-		if (stage == BATT_EXTENDER_STAGE_0)
+		if (stage == BATT_EXTENDER_STAGE_0 &&
+		    old_charger_limit != 100) {
 			charger_sustainer_reset();
+			old_charger_limit = 100;
+		}
 		return;
 	}
 
