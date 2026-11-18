@@ -1,0 +1,25 @@
+/* Copyright 2026 The ChromiumOS Authors
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file.
+ */
+
+/*
+ * Two channels of an F75303, each on an I2C mock of its own so that a test can
+ * make the reads of one fail. They are not in named-temp-sensors, so nothing
+ * but the tests polls them.
+ */
+&i2c0 {
+	f75303_local: f75303_local@4d {
+		compatible = "cros-ec,temp-sensor-f75303", "cros,i2c-mock";
+		status = "okay";
+		reg = <0x4d>;
+		temperature-type = "F75303_IDX_LOCAL";
+	};
+
+	f75303_remote1: f75303_remote1@4e {
+		compatible = "cros-ec,temp-sensor-f75303", "cros,i2c-mock";
+		status = "okay";
+		reg = <0x4e>;
+		temperature-type = "F75303_IDX_REMOTE1";
+	};
+};

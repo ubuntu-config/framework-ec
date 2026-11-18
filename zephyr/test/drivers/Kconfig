@@ -82,6 +82,9 @@ config LINK_TEST_SUITE_COMMON_CBI_GPIO
 config LINK_TEST_SUITE_COMMON_CHARGER
 	bool "Link and execute the common/charger.c tests"
 
+config LINK_TEST_SUITE_F75303
+	bool "Link and test the F75303 temperature sensor tests"
+
 config LINK_TEST_SUITE_FAN
 	bool "Link and test the fan tests"
 
