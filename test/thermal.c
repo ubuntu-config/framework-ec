@@ -38,12 +38,18 @@ static int cpu_shutdown;
 static int fan_pct;
 static int no_temps_read;
 
+/* A mock_temp value for a sensor which has stopped answering. */
+#define MOCK_TEMP_LOST -2
+
 int mock_temp_get_val(int idx, int *temp_ptr)
 {
 	if (mock_temp[idx] >= 0) {
 		*temp_ptr = mock_temp[idx];
 		return EC_SUCCESS;
 	}
+
+	if (mock_temp[idx] == MOCK_TEMP_LOST)
+		return EC_ERROR_HW_INTERNAL;
 
 	return EC_ERROR_NOT_POWERED;
 }
@@ -312,6 +318,50 @@ static int test_all_fans(void)
 	all_temps(65);
 	crec_sleep(2);
 	TEST_ASSERT(fan_pct == 100);
+
+	return EC_SUCCESS;
+}
+
+static int test_lost_fan_sensor(void)
+{
+	reset_mocks();
+	thermal_params[2].temp_fan_off = 100;
+	thermal_params[2].temp_fan_max = 200;
+	test_chipset_on();
+
+	/* A lost sensor without a fan curve leaves the fans to the others. */
+	set_temps(MOCK_TEMP_LOST, 50, 150, 50);
+	crec_sleep(2);
+	TEST_ASSERT(fan_pct == 50);
+
+	/* A lost sensor with a fan curve asks for full speed. */
+	set_temps(50, 50, MOCK_TEMP_LOST, 50);
+	crec_sleep(2);
+	TEST_ASSERT(fan_pct == 100);
+
+	/* Also when no other sensor can be read. */
+	set_temps(-1, -1, MOCK_TEMP_LOST, -1);
+	fan_pct = 0;
+	crec_sleep(2);
+	TEST_ASSERT(fan_pct == 100);
+
+	/* A sensor with a fan curve which fails a read is only skipped. */
+	set_temps(50, 50, -1, 50);
+	fan_pct = 0;
+	crec_sleep(2);
+	TEST_ASSERT(fan_pct == 0);
+
+	/* Once the sensor is read again, its curve sets the fans again. */
+	set_temps(50, 50, 130, 50);
+	crec_sleep(2);
+	TEST_ASSERT(fan_pct == 30);
+
+	/* While the AP is off, a lost sensor is only skipped. */
+	test_chipset_off();
+	set_temps(50, 50, MOCK_TEMP_LOST, 50);
+	fan_pct = 0;
+	crec_sleep(2);
+	TEST_ASSERT(fan_pct == 0);
 
 	return EC_SUCCESS;
 }
@@ -632,6 +682,7 @@ void run_test(int argc, const char **argv)
 	RUN_TEST(test_one_fan);
 	RUN_TEST(test_two_fans);
 	RUN_TEST(test_all_fans);
+	RUN_TEST(test_lost_fan_sensor);
 
 	RUN_TEST(test_one_limit);
 	RUN_TEST(test_several_limits);

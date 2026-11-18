@@ -78,6 +78,11 @@ static bool thermal_warn_active;
 static int first_read_delay = CONFIG_TEMP_SENSOR_FIRST_READ_DELAY_MS;
 #endif
 
+#if defined(CONFIG_FANS) && !defined(CONFIG_CUSTOM_FAN_CONTROL)
+/* Whether a lost sensor with a fan curve holds the fans at full speed. */
+static bool fans_full_for_lost_sensor;
+#endif
+
 static void thermal_control(void)
 {
 	int i, j, t, rv;
@@ -90,6 +95,7 @@ static void thermal_control(void)
 	int f = 0;
 	int fmax = 0;
 	int temp_fan_configured = 0;
+	int lost_fan_sensor = -1;
 #else
 	int temp[TEMP_SENSOR_COUNT] = {0};
 #endif
@@ -114,6 +120,25 @@ static void thermal_control(void)
 	for (i = 0; i < TEMP_SENSOR_COUNT; ++i) {
 		/* read one */
 		rv = temp_sensor_read(i, &t);
+
+#if defined(CONFIG_FANS) && !defined(CONFIG_CUSTOM_FAN_CONTROL)
+		/*
+		 * A sensor which reports EC_ERROR_HW_INTERNAL has stopped
+		 * answering, so its temperature is unknown. While the AP runs,
+		 * such a sensor with a fan curve asks for full speed, the same
+		 * as one at the top of its curve. Other read errors, which a
+		 * sensor reports when a single read fails, only skip it.
+		 */
+		if (rv == EC_ERROR_HW_INTERNAL &&
+		    thermal_params[i].temp_fan_off &&
+		    thermal_params[i].temp_fan_max &&
+		    chipset_in_state(CHIPSET_STATE_ON)) {
+			fmax = 100;
+			temp_fan_configured = 1;
+			if (lost_fan_sensor < 0)
+				lost_fan_sensor = i;
+		}
+#endif
 
 		if (rv != EC_SUCCESS)
 			continue;
@@ -158,6 +183,23 @@ static void thermal_control(void)
 #endif
 #endif
 	}
+
+#if defined(CONFIG_FANS) && !defined(CONFIG_CUSTOM_FAN_CONTROL)
+	if ((lost_fan_sensor >= 0) != fans_full_for_lost_sensor) {
+		fans_full_for_lost_sensor = lost_fan_sensor >= 0;
+		if (fans_full_for_lost_sensor)
+			CPRINTS("thermal: %s lost, fans at full speed",
+				temp_sensors[lost_fan_sensor].name);
+		else
+			CPRINTS("thermal: fans follow the sensors again");
+	}
+
+	/* The fans keep full speed when no sensor can be read either. */
+	if (!num_sensors_read && fans_full_for_lost_sensor) {
+		for (i = 0; i < fan_get_count(); i++)
+			fan_set_percent_needed(i, 100);
+	}
+#endif
 
 	if (!num_sensors_read) {
 		/*
