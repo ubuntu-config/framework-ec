@@ -83,6 +83,8 @@ static unsigned int user_current_limit = -1U;
 test_export_static timestamp_t shutdown_target_time;
 static timestamp_t precharge_start_time;
 static struct sustain_soc sustain_soc;
+/* Whether AC was connected since the sustainer last ran with AC present. */
+static bool sustain_ac_connected;
 static struct current_limit {
 	uint32_t value; /* Charge limit to apply, in mA */
 	int soc; /* Minimum battery SoC at which the limit will be applied. */
@@ -886,7 +888,7 @@ int battery_outside_charging_temperature(void)
 }
 
 static enum ec_charge_control_mode
-sustain_switch_mode(enum ec_charge_control_mode mode)
+sustain_switch_mode(enum ec_charge_control_mode mode, bool ac_connected)
 {
 	enum ec_charge_control_mode new_mode = mode;
 	int soc = charge_get_display_charge() / 10;
@@ -909,6 +911,11 @@ sustain_switch_mode(enum ec_charge_control_mode mode)
 	 * normally should stay in the sustain range unless there is high load
 	 * on the system or the charger is too weak.
 	 *
+	 * Disconnecting AC sets the mode to NORMAL. When AC is connected again
+	 * with the soc in the sustain range, it switches to IDLE right away,
+	 * the same as if AC had stayed connected, so the soc is charged to the
+	 * upper only once it falls below the lower.
+	 *
 	 * Some boards have a sing capacitor problem with mode == IDLE. For such
 	 * boards, a host can specify EC_CHARGE_CONTROL_FLAG_NO_IDLE, which
 	 * makes the sustainer use DISCHARGE instead of IDLE. This is done by
@@ -923,10 +930,12 @@ sustain_switch_mode(enum ec_charge_control_mode mode)
 			 * upper limit at the time the sustainer started.
 			 */
 			new_mode = CHARGE_CONTROL_DISCHARGE;
-		} else if (sustain_soc.upper == soc) {
+		} else if (sustain_soc.upper == soc ||
+			   (ac_connected && sustain_soc.lower <= soc)) {
 			/*
-			 * We've been charging and finally reached the upper.
-			 * Let's switch to IDLE to stay.
+			 * We've been charging and finally reached the upper,
+			 * or AC was just connected with the soc in the sustain
+			 * range. Let's switch to IDLE to stay.
 			 */
 			if (sustain_soc.flags & EC_CHARGE_CONTROL_FLAG_NO_IDLE)
 				new_mode = CHARGE_CONTROL_DISCHARGE;
@@ -978,14 +987,25 @@ static void sustain_battery_soc(void)
 {
 	enum ec_charge_control_mode mode = get_chg_ctrl_mode();
 	enum ec_charge_control_mode new_mode;
+	bool ac_connected = sustain_ac_connected;
 	int rv;
 
-	/* If either AC or battery is not present, nothing to do. */
-	if (!curr.ac || curr.batt.is_present != BP_YES ||
-	    !battery_sustainer_enabled())
+	/* If AC is not present, nothing to do. */
+	if (!curr.ac)
 		return;
 
-	new_mode = sustain_switch_mode(mode);
+	/*
+	 * The first run with AC present after the connection uses it up, also
+	 * when there is nothing to do, so a sustainer enabled later on AC
+	 * still starts by charging to the upper.
+	 */
+	sustain_ac_connected = false;
+
+	/* If the battery is not present, nothing to do. */
+	if (curr.batt.is_present != BP_YES || !battery_sustainer_enabled())
+		return;
+
+	new_mode = sustain_switch_mode(mode, ac_connected);
 
 	if (new_mode == mode)
 		return;
@@ -1234,6 +1254,8 @@ static void process_ac_change(const int chgnum)
 
 		if (rv == EC_SUCCESS)
 			prev_ac = curr.ac;
+
+		sustain_ac_connected = true;
 	} else {
 		/* Some things are only meaningful on AC */
 		set_chg_ctrl_mode(CHARGE_CONTROL_NORMAL);
