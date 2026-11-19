@@ -1214,6 +1214,76 @@ test_static int test_battery_sustainer_ac_reconnect(void)
 	return EC_SUCCESS;
 }
 
+/*
+ * The host setting the sustainer with the charge between the lower and the
+ * upper limit keeps the charge, also after a forced discharge, and only a
+ * charge below the lower limit is charged up to the upper limit.
+ */
+test_static int
+run_battery_sustainer_host_set(enum ec_charge_control_flag flags)
+{
+	/* The mode which holds the charge inside the sustain range. */
+	enum ec_charge_control_mode hold =
+		(flags & EC_CHARGE_CONTROL_FLAG_NO_IDLE) ?
+			CHARGE_CONTROL_DISCHARGE :
+			CHARGE_CONTROL_IDLE;
+	int rv;
+
+	test_setup(1);
+
+	/* lower < SoC < upper */
+	display_soc = 750;
+	wait_charging_state();
+	rv = sustainer_set_via_hc(3, 70, 80, flags);
+	TEST_ASSERT(rv == EC_RES_SUCCESS);
+	wait_charging_state();
+	TEST_ASSERT(get_chg_ctrl_mode() == hold);
+
+	/* A forced discharge, then the sustainer again. */
+	rv = charge_control(CHARGE_CONTROL_DISCHARGE);
+	TEST_ASSERT(rv == EC_RES_SUCCESS);
+	display_soc = 720;
+	wait_charging_state();
+	TEST_ASSERT(get_chg_ctrl_mode() == CHARGE_CONTROL_DISCHARGE);
+	rv = sustainer_set_via_hc(3, 70, 80, flags);
+	TEST_ASSERT(rv == EC_RES_SUCCESS);
+	wait_charging_state();
+	TEST_ASSERT(get_chg_ctrl_mode() == hold);
+
+	/* SoC < lower. The battery charges to the upper. */
+	rv = sustainer_set_via_hc(3, -1, -1, 0);
+	TEST_ASSERT(rv == EC_RES_SUCCESS);
+	display_soc = 650;
+	wait_charging_state();
+	rv = sustainer_set_via_hc(3, 70, 80, flags);
+	TEST_ASSERT(rv == EC_RES_SUCCESS);
+	wait_charging_state();
+	TEST_ASSERT(get_chg_ctrl_mode() == CHARGE_CONTROL_NORMAL);
+	display_soc = 750;
+	wait_charging_state();
+	TEST_ASSERT(get_chg_ctrl_mode() == CHARGE_CONTROL_NORMAL);
+	display_soc = 800;
+	wait_charging_state();
+	TEST_ASSERT(get_chg_ctrl_mode() == hold);
+
+	rv = sustainer_set_via_hc(3, -1, -1, 0);
+	TEST_ASSERT(rv == EC_RES_SUCCESS);
+
+	return EC_SUCCESS;
+}
+
+test_static int test_battery_sustainer_host_set(void)
+{
+	ccprintf("Test host set with idle\n");
+	TEST_ASSERT(run_battery_sustainer_host_set(0) == EC_SUCCESS);
+
+	ccprintf("Test host set without idle\n");
+	TEST_ASSERT(run_battery_sustainer_host_set(
+			    EC_CHARGE_CONTROL_FLAG_NO_IDLE) == EC_SUCCESS);
+
+	return EC_SUCCESS;
+}
+
 void run_test(int argc, const char **argv)
 {
 	RUN_TEST(test_charge_state);
@@ -1231,6 +1301,7 @@ void run_test(int argc, const char **argv)
 	RUN_TEST(test_battery_sustainer_without_idle);
 	RUN_TEST(test_battery_sustainer_with_idle);
 	RUN_TEST(test_battery_sustainer_ac_reconnect);
+	RUN_TEST(test_battery_sustainer_host_set);
 	RUN_TEST(test_deep_charge_battery);
 
 	test_print_result();
