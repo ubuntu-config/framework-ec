@@ -26,6 +26,9 @@ variables:
   GIT_DEPTH: 0
   # The path of the EC checkout in the ChromiumOS SDK chroot, where the images expect it.
   EC: /mnt/host/source/src/platform/ec
+  # The runner fetches the repository through GitLab's CI gateway, which sometimes does not answer. GitLab reports such
+  # a job as failed by its script, which retry below does not cover, so the runner tries the fetch up to 3 times.
+  GET_SOURCES_ATTEMPTS: 3
 
 default:
   # A job which failed before its script ran, like when the runner could not pull the image, or whose runner broke,
