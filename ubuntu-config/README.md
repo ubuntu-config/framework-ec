@@ -4,8 +4,13 @@ This directory builds the embedded controller (EC) firmware of the Framework Lap
 project lilac, the way Framework builds its releases, and runs the test suites of the EC repository, locally and in
 GitLab CI. A clean checkout of a release commit gives the released image, except for the build date.
 
+It is part of [ubuntu-config](https://gitlab.com/ubuntu-config/ubuntu-config), the configuration of Ubuntu 26.04 with
+GNOME 50 on a Framework Laptop 13 Pro, which this firmware runs on. See there for more about the laptop and its setup,
+and for the fixes to the rest of the system.
+
 The branch ubuntu-config starts at Framework's release 4.0.2, fdbf54948b5c "fwk: lilac: bump to v4.0.2" (the head of
-fwk-lilac-refresh), and holds local changes on top of it. The other branches are Framework's, as they are on GitHub.
+fwk-lilac-refresh), and holds local changes on top of it. The other branches are Framework's, which this repository
+mirrors from [Framework's EC repository](https://github.com/FrameworkComputer/EmbeddedController).
 
 ## Files
 
@@ -88,3 +93,8 @@ jobserver, twister's parallel builds overload the machine and native_sim tests r
 wrappers add the flags of the ChromiumOS SDK's compiler wrapper, which upstream code relies on.
 
 All steps pass on the branch ubuntu-config. Of twister's configurations, one only builds, by design.
+
+## GitHub mirror
+
+There is also a [read-only GitHub mirror available](https://github.com/ubuntu-config/framework-ec),
+if you need to fork the project there.
