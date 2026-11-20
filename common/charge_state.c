@@ -901,19 +901,20 @@ sustain_switch_mode(enum ec_charge_control_mode mode, bool hold_in_range)
 	 * The sustain range is defined by 'lower' and 'upper' where the equal
 	 * values are inclusive:
 	 *
-	 * |------------NORMAL------------+--IDLE--+---DISCHARGE---|
-	 * 0%                             ^        ^              100%
+	 * |------------NORMAL------------+-------------IDLE--------------|
+	 * 0%                             ^        ^                   100%
 	 *                              lower    upper
 	 *
 	 * The switch statement below allows the sustainer to start with any soc
-	 * (0% ~ 100%) and any previous lower & upper limits. It sets mode to
-	 * NORMAL to charge till the soc hits the upper limit or sets mode to
-	 * DISCHARGE to discharge till the soc hits the upper limit.
-	 *
-	 * Once the soc enters in the sustain range, it'll switch to IDLE. In
-	 * IDLE mode, the system power is supplied from the AC. Thus, the soc
-	 * normally should stay in the sustain range unless there is high load
-	 * on the system or the charger is too weak.
+	 * (0% ~ 100%) and any previous lower & upper limits. Below the lower
+	 * limit it sets mode to NORMAL to charge till the soc hits the upper
+	 * limit, and from the lower limit up it sets mode to IDLE. In IDLE
+	 * mode, the system power is supplied from the AC, so the battery is
+	 * neither charged nor discharged actively. Thus, the soc normally stays
+	 * where it is unless there is high load on the system or the charger
+	 * is too weak, and a soc above the upper limit, as when the sustainer
+	 * starts with a fuller battery or with a lower upper limit, comes down
+	 * only as the battery discharges without AC.
 	 *
 	 * Disconnecting AC sets the mode to NORMAL, and so does the host when it
 	 * sets the sustainer. When AC is connected again or the host sets the
@@ -923,22 +924,18 @@ sustain_switch_mode(enum ec_charge_control_mode mode, bool hold_in_range)
 	 *
 	 * Some boards have a sing capacitor problem with mode == IDLE. For such
 	 * boards, a host can specify EC_CHARGE_CONTROL_FLAG_NO_IDLE, which
-	 * makes the sustainer use DISCHARGE instead of IDLE. This is done by
+	 * makes the sustainer use DISCHARGE instead of IDLE, which discharges
+	 * the battery actively also above the upper limit. This is done by
 	 * setting lower != upper in V2, which doesn't support the flag.
 	 */
 	switch (mode) {
 	case CHARGE_CONTROL_NORMAL:
 		/* Currently charging */
-		if (sustain_soc.upper < soc) {
-			/*
-			 * We come here only if the soc is already above the
-			 * upper limit at the time the sustainer started.
-			 */
-			new_mode = CHARGE_CONTROL_DISCHARGE;
-		} else if (sustain_soc.upper == soc ||
-			   (hold_in_range && sustain_soc.lower <= soc)) {
+		if (sustain_soc.upper <= soc ||
+		    (hold_in_range && sustain_soc.lower <= soc)) {
 			/*
 			 * We've been charging and finally reached the upper,
+			 * the sustainer started with the soc above the upper,
 			 * or AC was just connected or the sustainer just set
 			 * with the soc in the sustain range. Let's switch to
 			 * IDLE to stay.
@@ -953,34 +950,28 @@ sustain_switch_mode(enum ec_charge_control_mode mode, bool hold_in_range)
 		/* Discharging naturally */
 		if (soc < sustain_soc.lower)
 			/*
-			 * Presumably, we stayed in the sustain range for a
-			 * while but finally fell off the range. Let's charge to
-			 * the upper.
+			 * Presumably, we stayed in the sustain range or above
+			 * it for a while but finally fell off the range. Let's
+			 * charge to the upper.
 			 */
 			new_mode = CHARGE_CONTROL_NORMAL;
-		else if (sustain_soc.upper < soc)
-			/*
-			 * This can happen only if sustainer is restarted with
-			 * decreased upper limit. Let's discharge to the upper.
-			 */
-			new_mode = CHARGE_CONTROL_DISCHARGE;
 		break;
 	case CHARGE_CONTROL_DISCHARGE:
 		/* Discharging actively. */
-		if (soc <= sustain_soc.upper &&
-		    !(sustain_soc.flags & EC_CHARGE_CONTROL_FLAG_NO_IDLE))
+		if (soc < sustain_soc.lower)
 			/*
-			 * Normal case. We've been discharging and finally
-			 * reached the upper. Let's switch to IDLE to stay.
-			 */
-			new_mode = CHARGE_CONTROL_IDLE;
-		else if (soc < sustain_soc.lower)
-			/*
-			 * This can happen only if sustainer is restarted with
-			 * increase lower limit. Let's charge to the upper (then
-			 * switch to IDLE).
+			 * We fell off the range, or the sustainer is restarted
+			 * with an increased lower limit. Let's charge to the
+			 * upper (then switch to IDLE).
 			 */
 			new_mode = CHARGE_CONTROL_NORMAL;
+		else if (!(sustain_soc.flags & EC_CHARGE_CONTROL_FLAG_NO_IDLE))
+			/*
+			 * Only a host which asks for no IDLE keeps the
+			 * sustainer discharging, so let's switch to IDLE to
+			 * stay.
+			 */
+			new_mode = CHARGE_CONTROL_IDLE;
 		break;
 	default:
 		break;
