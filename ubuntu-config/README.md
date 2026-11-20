@@ -12,6 +12,99 @@ The branch ubuntu-config starts at Framework's release 4.0.2, fdbf54948b5c "fwk:
 fwk-lilac-refresh), and holds local changes on top of it. The other branches are Framework's, which this repository
 mirrors from [Framework's EC repository](https://github.com/FrameworkComputer/EmbeddedController).
 
+## Contents
+
+- [Changes](#changes): what the branch ubuntu-config changes in Framework's release 4.0.2.
+  - [Fixes](#fixes): the AC state, a lost temperature sensor, the charge sustainer, Linux's charge thresholds, UCSI,
+    and Framework's own fixes after 4.0.2.
+  - [Additions](#additions): the fan's duty cycle and control, and the battery's temperature, for Linux.
+  - [Preferences](#preferences): no active discharge, and a quieter EC console.
+  - [Test repairs](#test-repairs): the EC's test suites build and pass with Framework's code.
+- [Flashing](#flashing): trying the firmware in RW, then making it permanent in RO.
+- [Files](#files), [Images](#images), [CI](#ci), [Local use](#local-use), [Toolchain](#toolchain) and
+  [Tests](#tests): how the firmware is built and tested.
+- [GitHub mirror](#github-mirror).
+
+## Changes
+
+What the branch ubuntu-config changes in Framework's release 4.0.2, `git log fdbf54948b..ubuntu-config` in detail.
+
+### Fixes
+
+- **The AC state does not bounce when the charger is plugged or unplugged**
+  ([issue 88](https://github.com/FrameworkComputer/EmbeddedController/issues/88)). The battery flags which the host
+  reads could carry the AC state from before the change, so Linux's `ACAD/online` flipped three times within about
+  150 ms. They now carry the AC state at the time they are written.
+- **A temperature sensor which stops answering runs the fan at full speed**
+  ([issue 69](https://github.com/FrameworkComputer/EmbeddedController/issues/69)). After days of uptime the I2C bus of
+  the board's F75303 sensors can stall, and the driver kept reporting the last readings, so the fan followed frozen
+  temperatures and could stay off while the processor heated up. The driver now reports a channel which failed three
+  polls in a row as lost, the host sees it fail to read, and thermal control runs the fan at full speed while a sensor
+  with a fan curve is lost. A suspend and resume frees the bus, and the fan follows the sensors again.
+- **The charge stays in the sustain range**
+  ([issue 102](https://github.com/FrameworkComputer/EmbeddedController/issues/102)). Connecting AC, and the host
+  setting the charge thresholds, which Linux does at every write of a threshold and when `charge_behaviour` returns to
+  `auto`, charged the battery to the upper threshold even with the charge already in the range. The charge is now
+  kept, and the battery charges to the upper threshold only once it falls below the lower one.
+- **Linux's charge thresholds hold with the firmware's own charge limit at 100%**
+  ([SoftwareFirmwareIssueTracker issue 85](https://github.com/FrameworkComputer/SoftwareFirmwareIssueTracker/issues/85)).
+  With the limit in the BIOS at 100%, the firmware cleared the charge sustainer every second, which removed the
+  thresholds set from Linux. It now clears it once, when the limit changes to 100%.
+- **The UCSI error status is read from the right byte**
+  ([issue 89](https://github.com/FrameworkComputer/EmbeddedController/issues/89)).
+- **Framework's fixes after 4.0.2**, from its later branches and
+  [pull request 79](https://github.com/FrameworkComputer/EmbeddedController/pull/79): no crash on garbage PD data, an
+  invalid PD port index rejected, the PD charge ceiling applied to the right controller, only F1 to F12 ignoring Fn
+  Lock in the BIOS, and a typo.
+
+### Additions
+
+- **The fan's duty cycle and control for Linux**
+  ([issue 98](https://github.com/FrameworkComputer/EmbeddedController/issues/98)). The upstream host commands
+  `EC_CMD_PWM_GET_FAN_DUTY` and version 2 of `EC_CMD_THERMAL_AUTO_FAN_CTRL`, with which Linux's `cros_ec` hwmon device
+  offers `pwm1` (the duty cycle), `pwm1_enable` (manual or automatic control) and the fan as a thermal cooling device.
+- **The battery's temperature for Linux**. The EC reports it as the temperature sensor `battery_temp@b`, which Linux
+  shows in the `cros_ec` hwmon device.
+
+### Preferences
+
+- **The charge sustainer never discharges the battery actively**. A charge above the upper threshold, as when the
+  thresholds are set after a full charge, is kept and comes down as the battery discharges without AC, instead of the
+  laptop running from its battery on AC until the charge reaches the upper threshold. A host which asks for no idle
+  mode keeps the sustainer discharging.
+- **Reads of the fan target stay out of the EC console**. Linux reads the fan target at every read of its hwmon
+  attribute, and the EC counts these in its hourly summary of suppressed host commands instead of logging each.
+
+### Test repairs
+
+Eleven changes to Framework's Kconfig defaults, headers and tests make the configurations of the EC's test suites
+build and pass with Framework's code, for example by matching the default task priorities to the tasks Framework adds,
+and by building the PD host commands without a standalone PD chip. They do not change the firmware of lilac.
+
+## Flashing
+
+`framework_tool` flashes the firmware from Linux, as root, from version 0.6.6 on: earlier versions use an outdated
+layout of the EC's flash, which leaves out the end of the RW image. The image is the `ec.bin` of a local build or of the
+artifact of the `build` job of the commit's pipeline. Save a copy of the firmware the EC has first, with
+`framework_tool --dump-ec-flash`.
+
+The EC boots its RO copy and runs the RW copy only after a jump to it, so the firmware can be tried in RW, and any EC
+reset returns to RO: the laptop off without AC for 30 seconds, after which the EC hibernates, an EC reboot, a battery
+disconnect, or a BIOS update. A jump powers the laptop off at once, and the power button starts it again.
+
+```sh
+sudo framework_tool --flash-rw-ec ec.bin
+sudo framework_tool --reboot-ec jump-rw    # powers off at once
+sudo framework_tool --versions             # after the restart: "Current image: RW"
+```
+
+Flashing RO as well makes the firmware permanent. An RO which does not boot can be recovered only through the EC's
+debug pads with a UART adapter, so only an image which ran well in RW is flashed there.
+
+On battery, the EC's replies to host commands arrive corrupted from time to time while the processor uses its deepest
+idle state ([SoftwareFirmwareIssueTracker issue 308](https://github.com/FrameworkComputer/SoftwareFirmwareIssueTracker/issues/308)),
+which can make a flash fail, so it is best done on AC.
+
 ## Files
 
 - `Dockerfile`: the build image, with the coreboot-sdk toolchain of GCC, picolibc and libstdc++ as chromiumos-overlay
