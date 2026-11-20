@@ -1,0 +1,166 @@
+# Builds the EC firmware of lilac and runs the test suites of the EC repository, in the images which
+# ubuntu-config/Dockerfile and ubuntu-config/Dockerfile.test define, with the same ubuntu-config/build.sh and
+# ubuntu-config/test.sh which ubuntu-config/build-ec.sh and ubuntu-config/test-ec.sh run locally. See
+# ubuntu-config/README.md.
+
+stages:
+  - images
+  - build
+  - test
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS && $CI_PIPELINE_SOURCE == "push"
+      # To prevent duplicate pipelines, when a branch has a merge request, we only
+      # run a merge request pipeline when the branch is pushed.
+      when: never
+    - if: $CI_COMMIT_BRANCH
+    - if: $CI_COMMIT_TAG
+
+variables:
+  FF_ENABLE_BASH_EXIT_CODE_CHECK: "true"
+  FF_SCRIPT_SECTIONS: 1
+  FF_TIMESTAMPS: 1
+  # zmake names the commit in the version string, and the legacy version test describes it, as in a full clone.
+  GIT_DEPTH: 0
+  # The path of the EC checkout in the ChromiumOS SDK chroot, where the images expect it.
+  EC: /mnt/host/source/src/platform/ec
+
+default:
+  # A job which failed before its script ran, like when the runner could not pull the image, or whose runner broke,
+  # runs again. A script which fails or runs into the job's timeout does not.
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - scheduler_failure
+
+# The images are named by the hash of their Dockerfiles (ubuntu-config/image-tags.sh), and only an image which the
+# registry does not have yet is built and pushed. The names reach the other jobs as dotenv variables, which the runner
+# expands in their image keyword.
+images:
+  stage: images
+
+  image: docker:27.5.1
+
+  services:
+    - docker:27.5.1-dind
+
+  variables:
+    DOCKER_TLS_CERTDIR: /certs
+
+  script:
+    - ubuntu-config/image-tags.sh "$CI_REGISTRY_IMAGE" | tee images.env
+    - . ./images.env
+    - echo "$CI_REGISTRY_PASSWORD" | docker login --username "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+    # A new build image is built on the current base image, which tozd rebuilds every day.
+    - |
+      if ! docker manifest inspect "$BUILD_IMAGE" > /dev/null 2>&1; then
+        docker build --pull --tag "$BUILD_IMAGE" - < ubuntu-config/Dockerfile
+        docker push "$BUILD_IMAGE"
+      fi
+    - |
+      if ! docker manifest inspect "$TEST_IMAGE" > /dev/null 2>&1; then
+        docker build --tag "$TEST_IMAGE" --build-arg "BASE=$BUILD_IMAGE" - < ubuntu-config/Dockerfile.test
+        docker push "$TEST_IMAGE"
+      fi
+
+  artifacts:
+    reports:
+      dotenv: images.env
+
+  timeout: 2h
+
+# The checkout has to be at its path in the ChromiumOS SDK chroot, where GitLab does not clone, so it is mounted there,
+# which the privileged containers of GitLab's hosted runners allow. The jobs then write into their own directory, from
+# which GitLab collects the artifacts.
+.checkout:
+  before_script:
+    - mount --bind "$CI_PROJECT_DIR" "$EC"
+    - cd "$EC"
+
+build:
+  stage: build
+
+  image: $BUILD_IMAGE
+
+  needs:
+    - images
+
+  tags:
+    - saas-linux-2xlarge-amd64
+
+  variables:
+    # The user and host name of Framework's build machine of lilac 4.0.2, which the image contains.
+    USER: lotus
+    LOGNAME: lotus
+
+  before_script:
+    - !reference [.checkout, before_script]
+    - hostname ip-172-26-3-226
+
+  script:
+    - ubuntu-config/build.sh
+
+  artifacts:
+    paths:
+      - build/zephyr/lilac/output/
+    expire_in: never
+
+# Each step of ubuntu-config/test.sh runs in a job of its own. Its output goes to test-logs/<step>.log, because it is
+# longer than the first 4 MiB of a job's output which GitLab keeps, and only the end of it is printed.
+.test:
+  stage: test
+
+  image: $TEST_IMAGE
+
+  needs:
+    - images
+
+  before_script:
+    - !reference [.checkout, before_script]
+    - mkdir test-logs
+
+  script:
+    - ubuntu-config/test.sh "$STEP" > "test-logs/$STEP.log" 2>&1 || { tail -n 200 "test-logs/$STEP.log"; exit 1; }
+    - tail -n 20 "test-logs/$STEP.log"
+
+  artifacts:
+    when: always
+    paths:
+      - test-logs/
+      - twister-out-*/twister.json
+      - twister-out-*/twister.log
+      - twister-out-*/twister_report.xml
+    reports:
+      junit: twister-out-*/twister_report.xml
+    expire_in: never
+
+test:
+  extends: .test
+
+  parallel:
+    matrix:
+      - STEP:
+          - stack-analyzer
+          - util
+          - zmake
+          - compliance
+
+# The legacy tests and twister build hundreds of tests, twister with each toolchain in about 40 minutes on 24 CPUs.
+test_large:
+  extends: .test
+
+  tags:
+    - saas-linux-2xlarge-amd64
+
+  timeout: 2h
+
+  parallel:
+    matrix:
+      - STEP:
+          - legacy
+          - legacy-asan
+          - twister-host
+          - twister-llvm

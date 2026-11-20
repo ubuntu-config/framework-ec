@@ -1,0 +1,163 @@
+# Test environment for Framework EC firmware: the build image which Dockerfile defines, plus what the test suites of the
+# EC repository need. test.sh runs the tests in it, in CI and through test-ec.sh. The build image stays without these,
+# because zmake passes every module it finds in the checkout to the firmware build as well.
+
+ARG BASE
+FROM ${BASE}
+
+# 32-bit gcc for the native_sim platform, gperf for Zephyr's kernel object tables, protoc for nanopb, the libraries the
+# legacy host tests and utilities link with, the sanitizer and fuzzer runtimes of clang for the legacy fuzz tests, and
+# the Python modules of twister, zmake's tests and the util tests. Ubuntu noble does not package libprotobuf-mutator,
+# which some legacy fuzz tests also need.
+RUN apt-get update -q -q && \
+  apt-get install --yes --no-install-recommends gcc-multilib g++-multilib make gperf pkg-config protobuf-compiler \
+    libftdi1-dev libusb-1.0-0-dev libssl-dev libclang-rt-18-dev libprotobuf-dev libunwind-dev \
+    python3-psutil python3-tabulate python3-natsort python3-junitparser python3-ply python3-serial \
+    python3-pytest python3-mock python3-hypothesis python3-testfixtures python3-protobuf python3-intelhex \
+    python3-progress python3-semver python3-tqdm python3-requests python3-kconfiglib python3-pyfakefs \
+    python3-coverage python3-cbor2 python3-six python3-pip python3-unidiff python3-magic yamllint && \
+  apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Ubuntu noble does not package these: twister's runner imports anytree, and Zephyr's check_compliance.py, which the
+# compliance tests of the EC load, imports west. Their dependencies are among the packages above. West 1.3.0 was the
+# current release in March 2025.
+RUN printf '%s\n' \
+    'anytree==2.12.1 --hash=sha256:5ea9e61caf96db1e5b3d0a914378d2cd83c269dfce1fb8242ce96589fa3382f0' \
+    'west==1.3.0 --hash=sha256:b3af425fcce1f88a955942b3573bc877cdc3c3dbab5912434cdf44a473c5695b' | \
+  python3 -m pip install --quiet --no-deps --require-hashes --break-system-packages --root-user-action=ignore -r /dev/stdin
+
+# Scripts of the EC repository start with vpython3, which runs Python with the modules ChromiumOS pins. Here the
+# modules come from the packages above.
+RUN printf '#!/bin/sh\nexec python3 "$@"\n' > /usr/local/bin/vpython3 && chmod +x /usr/local/bin/vpython3
+
+# The other modules of a ChromiumOS checkout, at the commits its manifest had on 2025-03-04, the date of the last
+# upstream EC commit in the lilac branch: boringssl at its pinned commit, and the others at the head of the branch the
+# manifest follows. The twister wrapper of the EC repository adds pigweed to the modules of every test.
+RUN git init -q /mnt/host/source/src/third_party/pigweed && \
+  cd /mnt/host/source/src/third_party/pigweed && \
+  git fetch -q --depth 1 --no-tags https://chromium.googlesource.com/chromiumos/third_party/pigweed/pigweed 6a2f97d4f4c3b5bcae3033d88e32cdfdeaf92c62 && \
+  git checkout -q FETCH_HEAD
+RUN git init -q /mnt/host/source/src/third_party/boringssl && \
+  cd /mnt/host/source/src/third_party/boringssl && \
+  git fetch -q --depth 1 --no-tags https://chromium.googlesource.com/external/gob/boringssl/boringssl 3e89a7e8db8139db356b892ca9993172346c80cf && \
+  git checkout -q FETCH_HEAD
+RUN git init -q /mnt/host/source/src/third_party/cryptoc && \
+  cd /mnt/host/source/src/third_party/cryptoc && \
+  git fetch -q --depth 1 --no-tags https://chromium.googlesource.com/chromiumos/third_party/cryptoc 0dd679081b9c8bfa2583d74e3a17a413709ea362 && \
+  git checkout -q FETCH_HEAD
+RUN git init -q /mnt/host/source/src/third_party/zephyr/nanopb && \
+  cd /mnt/host/source/src/third_party/zephyr/nanopb && \
+  git fetch -q --depth 1 --no-tags https://chromium.googlesource.com/chromiumos/third_party/zephyr/nanopb d388a046ce1cf9b42ebce3aac307946f08e14329 && \
+  git checkout -q FETCH_HEAD
+RUN git init -q /mnt/host/source/src/third_party/zephyr/picolibc && \
+  cd /mnt/host/source/src/third_party/zephyr/picolibc && \
+  git fetch -q --depth 1 --no-tags https://chromium.googlesource.com/chromiumos/third_party/zephyr/picolibc 098b654c3c1aae292e364f69993e29106f6ec580 && \
+  git checkout -q FETCH_HEAD
+RUN git init -q /mnt/host/source/src/third_party/zephyr/hal_intel_public && \
+  cd /mnt/host/source/src/third_party/zephyr/hal_intel_public && \
+  git fetch -q --depth 1 --no-tags https://chromium.googlesource.com/chromiumos/third_party/zephyr/hal_intel 8c6772bb56997da40e3f624192334de22ee5e5a8 && \
+  git checkout -q FETCH_HEAD
+RUN git init -q /mnt/host/source/src/third_party/zephyr/hal_stm32 && \
+  cd /mnt/host/source/src/third_party/zephyr/hal_stm32 && \
+  git fetch -q --depth 1 --no-tags https://chromium.googlesource.com/chromiumos/third_party/zephyr/hal_stm32 234e2fcc053e46d44da08547a701b14db192ba38 && \
+  git checkout -q FETCH_HEAD
+
+# util/getversion.sh of the legacy build takes the ChromiumOS version for the firmware ID from this file of
+# chromiumos-overlay, which the version test checks. It is fetched alone, at the overlay revision of the same manifest
+# snapshot.
+RUN mkdir -p /mnt/host/source/src/third_party/chromiumos-overlay/chromeos/config && \
+  curl -sS -f 'https://chromium.googlesource.com/chromiumos/overlays/chromiumos-overlay/+/8a711b4c66ec073da8313994b93c33ce5cefb81d/chromeos/config/chromeos_version.sh?format=TEXT' | \
+    base64 -d > /mnt/host/source/src/third_party/chromiumos-overlay/chromeos/config/chromeos_version.sh && \
+  echo '9a6e0ecf60c714bce62be8709a407c593a91811634e900a6a801d7e47abfb48c  /mnt/host/source/src/third_party/chromiumos-overlay/chromeos/config/chromeos_version.sh' | \
+    sha256sum -c --quiet && \
+  chmod +x /mnt/host/source/src/third_party/chromiumos-overlay/chromeos/config/chromeos_version.sh
+
+# The EC's host toolchain for Zephyr and its legacy makefiles call the host tools by the names they have in the
+# ChromiumOS SDK, /usr/bin/x86_64-pc-linux-gnu-*, which Ubuntu calls x86_64-linux-gnu-*. clang selects its target from
+# the prefix of the name it is called by.
+RUN for tool in /usr/bin/x86_64-linux-gnu-*; do \
+    ln -s "${tool##*/}" "/usr/bin/x86_64-pc-linux-gnu-${tool##*/x86_64-linux-gnu-}"; \
+  done && \
+  ln -s clang /usr/bin/x86_64-pc-linux-gnu-clang && \
+  ln -s clang++ /usr/bin/x86_64-pc-linux-gnu-clang++
+
+# The compilers of the ChromiumOS SDK are compiler_wrapper of toolchain-utils, which adds default flags to every
+# compilation. These are the flags of its host configuration (getCrosHostConfig in compiler_wrapper/config.go) at
+# toolchain-utils 79b73fca2590, the revision of the manifest snapshot of 2025-03-04, so that tests compile here as on
+# ChromiumOS's builders. Upstream code relies on them: for example, zephyr/emul/emul_bmi3xx.c defines a callback with
+# a uint8_t * parameter where char * is declared, which clang 16 and later reject without
+# -Wno-incompatible-function-pointer-types, and common/shared_mem_libc.c calls mallinfo(), which newer glibc marks as
+# deprecated. The firmware build calls the coreboot-sdk compiler directly, which these do not change.
+#
+# The clang of the SDK links with lld by default (-DCLANG_DEFAULT_LINKER=lld in
+# sys-devel/llvm/llvm-19.0_pre530567-r148.ebuild of the same snapshot), while the clang of Ubuntu links with GNU ld,
+# which rejects the LTO and ASan objects of the legacy fuzz tests with references into discarded sections, so the
+# wrapper selects lld. The default C++ library and runtime of that clang, libc++ and compiler-rt, stay those of Ubuntu,
+# which its C++ libraries, like protobuf, are built with.
+RUN clang_flags='-fcommon -Qunused-arguments -Werror=poison-system-directories -Wno-deprecated-declarations' && \
+  clang_flags="$clang_flags -Wno-error=implicit-function-declaration -Wno-error=implicit-int -Wno-unknown-warning-option" && \
+  clang_flags="$clang_flags -fdebug-default-version=5 -Wno-int-conversion -Wno-incompatible-function-pointer-types" && \
+  clang_flags="$clang_flags -Wno-error=vla-cxx-extension -D_LIBCPP_ENABLE_CXX17_REMOVED_FEATURES" && \
+  clang_flags="$clang_flags -Wno-unused-local-typedefs -fno-addrsig -fuse-ld=lld" && \
+  gcc_flags='-fcommon -Wno-maybe-uninitialized -Wno-unused-local-typedefs -Wno-deprecated-declarations' && \
+  # clang selects C or C++ from the name it is called by, and clang++ is a link to clang, so clang is called by its
+  # own directory and the name. The gcc drivers are separate programs.
+  llvm_bin=$(dirname "$(readlink -f /usr/bin/clang)") && \
+  wrap() { \
+    case $2 in \
+      clang*) real="$llvm_bin/$2" ;; \
+      *) real=$(readlink -f "/usr/bin/$2") ;; \
+    esac; \
+    rm -f "/usr/bin/$1"; \
+    printf '#!/bin/sh\nexec %s %s "$@"\n' "$real" "$3" > "/usr/bin/$1"; \
+    chmod +x "/usr/bin/$1"; \
+  } && \
+  for name in clang clang++ gcc g++; do wrap "x86_64-pc-linux-gnu-$name" "$name" "$(case $name in clang*) echo "$clang_flags" ;; *) echo "$gcc_flags" ;; esac)"; done && \
+  for name in clang clang++ gcc g++; do wrap "$name" "$name" "$(case $name in clang*) echo "$clang_flags" ;; *) echo "$gcc_flags" ;; esac)"; done
+
+# libprotobuf-mutator for the legacy host_command_fuzz test, built and installed the way
+# dev-libs/libprotobuf-mutator-20230425.ebuild of chromiumos-overlay does at the revision of the manifest snapshot:
+# static libraries in C++20, with the overlay's pkg-config file. The patch of the ebuild applies only to MSan builds.
+# The ebuild builds commit 3b28530531b1 of April 2023 against protobuf 23.3 of the SDK, which that commit requires.
+# Commit 8d20dea0f244 of 2025-02-25, the last before the snapshot, supports the protobuf 3.21 of Ubuntu noble again.
+# Ubuntu noble does not package libprotobuf-mutator.
+RUN git init -q /tmp/libprotobuf-mutator && \
+  cd /tmp/libprotobuf-mutator && \
+  git fetch -q --depth 1 --no-tags https://github.com/google/libprotobuf-mutator 8d20dea0f244c00f75f312d04f0e40e496446628 && \
+  git checkout -q FETCH_HEAD && \
+  sed -i -e 's/set(CMAKE_CXX_STANDARD 14)/set(CMAKE_CXX_STANDARD 20)/g' CMakeLists.txt && \
+  cmake -S . -B build -G Ninja -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=Release \
+    -DTHREADS_PTHREAD_ARG=-pthread -DBUILD_SHARED_LIBS=OFF -DCMAKE_CXX_STANDARD=20 -DLIB_PROTO_MUTATOR_TESTING=OFF && \
+  cmake --build build --target protobuf-mutator protobuf-mutator-libfuzzer && \
+  install -d /usr/include/libprotobuf-mutator/port /usr/include/libprotobuf-mutator/src/libfuzzer && \
+  install -m 644 port/*.h /usr/include/libprotobuf-mutator/port && \
+  install -m 644 src/*.h /usr/include/libprotobuf-mutator/src && \
+  install -m 644 src/libfuzzer/*.h /usr/include/libprotobuf-mutator/src/libfuzzer && \
+  install -m 644 build/src/libprotobuf-mutator.a build/src/libfuzzer/libprotobuf-mutator-libfuzzer.a \
+    /usr/lib/x86_64-linux-gnu && \
+  cd / && \
+  rm -rf /tmp/libprotobuf-mutator && \
+  curl -sS -f 'https://chromium.googlesource.com/chromiumos/overlays/chromiumos-overlay/+/8a711b4c66ec073da8313994b93c33ce5cefb81d/dev-libs/libprotobuf-mutator/files/libprotobuf-mutator.pc?format=TEXT' | \
+    base64 -d > /usr/share/pkgconfig/libprotobuf-mutator.pc && \
+  echo '9b26095e8ddd23940e451edea0d7be00195f83c11ebc05c56fceffdfe3c1a015  /usr/share/pkgconfig/libprotobuf-mutator.pc' | \
+    sha256sum -c --quiet
+
+# The ninja of the ChromiumOS SDK, which dev-util/ninja-1.11.1k.ebuild of chromiumos-overlay builds at the revision of
+# the manifest snapshot: Kitware's fork of ninja 1.11.1 with GNU make jobserver support (b/229869104), checked against
+# the overlay's Manifest. Twister runs one build per CPU in parallel and offers them a jobserver with one token per CPU.
+# The ninja of Ubuntu noble ignores the jobserver and starts a compiler per CPU in every build, and the native_sim tests
+# which run meanwhile become so slow that some exceed their timeouts. The only patch of the ebuild makes configure.py
+# respect CFLAGS. It is installed in /usr/local/bin, ahead of Ubuntu's ninja in PATH.
+RUN curl -sS -f -L -o /tmp/ninja.tar.gz \
+    https://github.com/Kitware/ninja/archive/refs/tags/v1.11.1.g95dee.kitware.jobserver-1.tar.gz && \
+  echo '37b3a421419b16930e53181c431fe3b4afd55ac54733a5df08376641fd2fb88eeb73ee7abe3788f3e491e7c1b215c7f35aefa66f44b09008ad22b76ab2998830  /tmp/ninja.tar.gz' | \
+    sha512sum -c --quiet && \
+  tar -C /tmp -xzf /tmp/ninja.tar.gz && \
+  cd /tmp/ninja-1.11.1.g95dee.kitware.jobserver-1 && \
+  python3 configure.py --bootstrap > /dev/null && \
+  install -m 755 ninja /usr/local/bin/ninja && \
+  cd / && \
+  rm -rf /tmp/ninja.tar.gz /tmp/ninja-1.11.1.g95dee.kitware.jobserver-1
+
+# The EC's own toolchain definitions, as in the chroot, where the twister wrapper uses them instead of Zephyr's.
+ENV TOOLCHAIN_ROOT=/mnt/host/source/src/platform/ec/zephyr
