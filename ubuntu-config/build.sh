@@ -9,7 +9,8 @@
 # The checkout has to be at /mnt/host/source/src/platform/ec, its path in the chroot: assertion messages contain source
 # file paths, which -fmacro-prefix-map makes relative to the parent of the checkout, like
 # EC_BASE/ec/build/zephyr/lilac/modules/ec/common/queue.c. The image contains the user and host name of the build
-# machine as well, lotus@ip-172-26-3-226 for lilac 4.0.2, so the caller sets them for a build equal to the release.
+# machine as well, which the caller sets: ubuntu-config@framework-ec in CI and by default in build-ec.sh, and
+# lotus@ip-172-26-3-226, the ones of Framework's build machine of lilac 4.0.2, for a build equal to the release.
 #
 #
 # Usage

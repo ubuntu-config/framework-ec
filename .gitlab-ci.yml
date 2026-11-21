@@ -95,13 +95,14 @@ build:
     - saas-linux-2xlarge-amd64
 
   variables:
-    # The user and host name of Framework's build machine of lilac 4.0.2, which the image contains.
-    USER: lotus
-    LOGNAME: lotus
+    # The user and host name which the image contains, the same as build-ec.sh uses by default, so that a local build of
+    # the commit gives the same image, except for the build date.
+    USER: ubuntu-config
+    LOGNAME: ubuntu-config
 
   before_script:
     - !reference [.checkout, before_script]
-    - hostname ip-172-26-3-226
+    - hostname framework-ec
 
   script:
     - ubuntu-config/build.sh

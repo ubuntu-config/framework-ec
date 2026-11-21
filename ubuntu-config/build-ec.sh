@@ -1,10 +1,13 @@
 #!/bin/sh
 #
-# Builds the EC firmware of a checkout the way Framework builds its releases, so that a clean checkout of a release
-# commit gives the released image, except for the build date. It runs build.sh in the build image, which CI uses as
-# well, without network, as user lotus on host ip-172-26-3-226 like Framework's build machine of lilac 4.0.2, with the
-# checkout mounted read-only at its path in the ChromiumOS SDK chroot and the build directory in
-# /tmp/framework-ec-build. The output is copied to out/<version string> next to this script.
+# Builds the EC firmware of a checkout the way Framework builds its releases. It runs build.sh in the build image, which
+# CI uses as well, without network, as user ubuntu-config on host framework-ec like CI, with the checkout mounted
+# read-only at its path in the ChromiumOS SDK chroot and the build directory in /tmp/framework-ec-build. The output is
+# copied to out/<version string> next to this script.
+#
+# With -R it builds as user lotus on host ip-172-26-3-226 like Framework's build machine of lilac 4.0.2, so that a clean
+# checkout of a release commit gives the released image, except for the build date. The user and host name are in the
+# image, and one of another length moves the data after it.
 #
 # Release builds run "zmake build -v VERSION PROJECT" in the ChromiumOS SDK chroot, and these parts of them are in the
 # image or here:
@@ -18,9 +21,10 @@
 #
 # Usage
 # -----
-#   build-ec.sh [-C CHECKOUT] [VERSION [PROJECT]]
+#   build-ec.sh [-C CHECKOUT] [-R] [VERSION [PROJECT]]
 #
 #   CHECKOUT    the checkout to build, by default the one this script is in, for example a worktree of a release commit
+#   -R          builds as Framework's build machine, to compare the image with a release
 #   VERSION     base version string, which zmake extends to <project>-<version>-<commit>, by default the one in the file
 #               version next to this script
 #   PROJECT     zmake project, lilac by default
@@ -34,14 +38,28 @@ EC=/mnt/host/source/src/platform/ec
 BUILD=/tmp/framework-ec-build
 
 checkout=$(cd "$dir/.." && pwd -P)
-if [ "${1:-}" = -C ]; then
-  if [ $# -lt 2 ]; then
-    sed -n 's/^#   //p' "$0" >&2
-    exit 2
-  fi
-  checkout=$(realpath "$2")
-  shift 2
-fi
+user=ubuntu-config
+host=framework-ec
+while [ $# -gt 0 ]; do
+  case $1 in
+    -C)
+      if [ $# -lt 2 ]; then
+        sed -n 's/^#   //p' "$0" >&2
+        exit 2
+      fi
+      checkout=$(realpath "$2")
+      shift 2
+      ;;
+    -R)
+      user=lotus
+      host=ip-172-26-3-226
+      shift
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
 version=${1:-$(cat "$dir/version")}
 project=${2:-lilac}
 
@@ -64,7 +82,7 @@ if [ -f "$checkout/.git/objects/info/alternates" ]; then
   done < "$checkout/.git/objects/info/alternates"
 fi
 docker run --rm --network=none \
-  --hostname ip-172-26-3-226 -e USER=lotus -e LOGNAME=lotus \
+  --hostname "$host" -e USER="$user" -e LOGNAME="$user" \
   -v "$checkout:$EC:ro" \
   -v "$BUILD:$EC/build" \
   -v "$dir:/opt/ubuntu-config:ro" \

@@ -2,7 +2,8 @@
 
 This directory builds the embedded controller (EC) firmware of the Framework Laptop 13 (AMD Ryzen AI 300), the zmake
 project lilac, the way Framework builds its releases, and runs the test suites of the EC repository, locally and in
-GitLab CI. A clean checkout of a release commit gives the released image, except for the build date.
+GitLab CI. Built as Framework's build machine, a clean checkout of a release commit gives the released image, except
+for the build date.
 
 It is part of [ubuntu-config](https://gitlab.com/ubuntu-config/ubuntu-config), the configuration of Ubuntu 26.04 with
 GNOME 50 on a Framework Laptop 13 Pro, which this firmware runs on. See there for more about the laptop and its setup,
@@ -166,8 +167,8 @@ builds byte for byte the same on Ubuntu resolute.
 `.gitlab-ci.yml` at the top of the repository runs, for every push of a branch which has it:
 
 - `images`: builds and pushes the images the registry does not have yet, with docker-in-docker.
-- `build`: builds lilac with `build.sh`, as user lotus on host ip-172-26-3-226 like Framework's build machine, and
-  keeps `build/zephyr/lilac/output/`, with `ec.bin`, as an artifact.
+- `build`: builds lilac with `build.sh`, as user ubuntu-config on host framework-ec like `build-ec.sh`, and keeps
+  `build/zephyr/lilac/output/`, with `ec.bin`, as an artifact.
 - `test` and `test_large`: one job per step of `test.sh`. The legacy tests and twister run on GitLab's largest hosted
   runner, `saas-linux-2xlarge-amd64`. Each job keeps the output of its step in `test-logs/`, and twister's reports.
 
@@ -183,9 +184,12 @@ ubuntu-config/test-ec.sh zmake compliance    # runs only these steps
 ubuntu-config/compare-ec.py A.bin B.bin
 ```
 
-To check a release, build its commit in a worktree with `build-ec.sh -C <worktree>` and compare the image with a dump
-of the EC flash (`framework_tool --dump-ec-flash`): they differ only in the build date and in 0x7f000-0x7f04f, the
-flash storage which the EC writes at runtime and which is erased in every built image.
+The image contains the user and host name of the build, ubuntu-config@framework-ec in CI and by default in
+`build-ec.sh`. To check a release, build its commit in a worktree with `build-ec.sh -C <worktree> -R`, as user lotus on
+host ip-172-26-3-226 like Framework's build machine of lilac 4.0.2, and compare the image with a dump of the EC flash
+(`framework_tool --dump-ec-flash`): they differ only in the build date and in 0x7f000-0x7f04f, the flash storage which
+the EC writes at runtime and which is erased in every built image. A user and host name of another length moves the
+data after them, so the image differs throughout.
 
 ## Toolchain
 
