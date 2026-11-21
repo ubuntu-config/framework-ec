@@ -3,7 +3,8 @@
 # Builds the firmware of a zmake project in the build image (Dockerfile), the way Framework builds its releases with
 # "zmake build -v VERSION PROJECT" in the ChromiumOS SDK chroot, and checks that the image carries the version string
 # zmake makes from the version, the project and the commit of the checkout, which ends with "+" for a tree with
-# uncommitted changes. The output is in build/zephyr/<project>/output of the checkout.
+# uncommitted changes. The output is in build/zephyr/<project>/output of the checkout. The Zephyr patches of the
+# checkout are applied to the image's Zephyr first (apply-zephyr-patches.sh).
 #
 # The checkout has to be at /mnt/host/source/src/platform/ec, its path in the chroot: assertion messages contain source
 # file paths, which -fmacro-prefix-map makes relative to the parent of the checkout, like
@@ -25,6 +26,8 @@ EC=/mnt/host/source/src/platform/ec
 
 version=${1:-$(cat "$(dirname "$0")/version")}
 project=${2:-lilac}
+
+"$(dirname "$0")/apply-zephyr-patches.sh"
 
 cd "$EC"
 zmake build -v "$version" "$project"

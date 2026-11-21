@@ -5,7 +5,8 @@
 # Zephyr tests), without code coverage. Twister writes its results to twister-out-<toolchain> in the checkout.
 #
 # The checkout has to be at /mnt/host/source/src/platform/ec, its path in the ChromiumOS SDK chroot, where the tests
-# find the other modules of a ChromiumOS checkout, which the image provides.
+# find the other modules of a ChromiumOS checkout, which the image provides. The Zephyr patches of the checkout are
+# applied to the image's Zephyr first (apply-zephyr-patches.sh).
 #
 # Two steps of ChromiumOS need compilers of its SDK which are not available outside it, so they are left out: the
 # legacy host tests built with x86_64-cros-linux-gnu, and the on-device unit tests of the bloonchipper, dartmonkey and
@@ -32,6 +33,8 @@ if [ "$1" = --list ]; then
   echo "$STEPS"
   exit 0
 fi
+
+"$(dirname "$0")/apply-zephyr-patches.sh"
 
 cd "$EC"
 jobs=$(nproc)

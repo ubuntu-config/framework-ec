@@ -1,0 +1,54 @@
+From 55cdcdce868f7c2d383d0f0264866be29b7b0496 Mon Sep 17 00:00:00 2001
+From: Jun Lin <CHLin56@nuvoton.com>
+Date: Thu, 18 Sep 2025 16:30:13 +0800
+Subject: [PATCH] drivers: pwm: npcx: fix word register access check placement
+
+Because the PWM module mixes byte and word register together, the driver
+adds an assertion check by writing a pattern to the 2-byte register
+`PRSC`, reading it back, and performing a comparison. However,
+the `PRSC` register cannot be written when the bit 7 (the PWR bit) in
+register `PMWCTLn` is set to 1. This commit moves the assertion check to
+a proper place to ensure the write is valid.
+
+Signed-off-by: Jun Lin <CHLin56@nuvoton.com>
+---
+ drivers/pwm/pwm_npcx.c | 16 +++++++---------
+ 1 file changed, 7 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/pwm/pwm_npcx.c b/drivers/pwm/pwm_npcx.c
+index 12a794c183930..cb85cf7d25872 100644
+--- a/drivers/pwm/pwm_npcx.c
++++ b/drivers/pwm/pwm_npcx.c
+@@ -58,6 +58,13 @@ static void pwm_npcx_configure(const struct device *dev, int clk_bus)
+ 	/* Disable PWM for module configuration first */
+ 	inst->PWMCTL &= ~BIT(NPCX_PWMCTL_PWR);
+ 
++	/*
++	 * NPCX PWM module mixes byte and word registers together. Make sure
++	 * word reg access via structure won't break into two byte reg accesses
++	 * unexpectedly by toolchains options or attributes. If so, stall here.
++	 */
++	NPCX_REG_WORD_ACCESS_CHECK(inst->PRSC, 0xA55A);
++
+ 	/* Set default PWM polarity to normal */
+ 	inst->PWMCTL &= ~BIT(NPCX_PWMCTL_INVP);
+ 
+@@ -172,18 +179,9 @@ static int pwm_npcx_init(const struct device *dev)
+ {
+ 	const struct pwm_npcx_config *const config = dev->config;
+ 	struct pwm_npcx_data *const data = dev->data;
+-	struct pwm_reg *const inst = config->base;
+ 	const struct device *const clk_dev = DEVICE_DT_GET(NPCX_CLK_CTRL_NODE);
+ 	int ret;
+ 
+-	/*
+-	 * NPCX PWM module mixes byte and word registers together. Make sure
+-	 * word reg access via structure won't break into two byte reg accesses
+-	 * unexpectedly by toolchains options or attributes. If so, stall here.
+-	 */
+-	NPCX_REG_WORD_ACCESS_CHECK(inst->PRSC, 0xA55A);
+-
+-
+ 	if (!device_is_ready(clk_dev)) {
+ 		LOG_ERR("clock control device not ready");
+ 		return -ENODEV;

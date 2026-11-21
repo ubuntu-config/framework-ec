@@ -52,6 +52,17 @@ What the branch ubuntu-config changes in Framework's release 4.0.2, `git log fdb
   thresholds set from Linux. It now clears it once, when the limit changes to 100%.
 - **The UCSI error status is read from the right byte**
   ([issue 89](https://github.com/FrameworkComputer/EmbeddedController/issues/89)).
+- **The USB-C ports keep working after a jump or an EC reset**. An image which started with the laptop off after a
+  jump between EC images, or after an EC reset other than a power-on, told both PD controllers the system power state
+  G3. The controllers had kept running, and after that they no longer detected chargers or devices, until they lost
+  power when the EC next hibernated. Such an image now leaves them in their state, and tells them G3 only when the
+  laptop enters it, or after a power-on reset, when the controllers have just powered up as well.
+- **A jump into this firmware survives a running fan or a lit side LED**
+  ([Zephyr pull request 96203](https://github.com/zephyrproject-rtos/zephyr/pull/96203)). Zephyr's NPCX PWM driver
+  checks its register access by writing the prescaler register before it switches the PWM off, and the register
+  ignores writes while the PWM runs. After a jump the PWMs keep running as the previous image left them, so with the
+  fan spinning or the side LED lit the new image halted while it started, and the EC restarted in RO. The build
+  applies Nuvoton's fix from upstream Zephyr, which Framework's Zephyr lacks, from `zephyr/`.
 - **Framework's fixes after 4.0.2**, from its later branches and
   [pull request 79](https://github.com/FrameworkComputer/EmbeddedController/pull/79): no crash on garbage PD data, an
   invalid PD port index rejected, the PD charge ceiling applied to the right controller, only F1 to F12 ignoring Fn
@@ -92,6 +103,14 @@ The EC boots its RO copy and runs the RW copy only after a jump to it, so the fi
 reset returns to RO: the laptop off without AC for 30 seconds, after which the EC hibernates, an EC reboot, a battery
 disconnect, or a BIOS update. A jump powers the laptop off at once, and the power button starts it again.
 
+Framework's firmware lacks both jump fixes under Changes, so a jump into its RO, with `jump-ro`, or into RW while RW
+holds its firmware, halts while the new image starts if the fan spins or the side LED is lit, and the EC restarts in
+RO. And when its image starts with the laptop off after a jump or after an EC reset other than a power-on, as RO does
+after such a restart, the USB-C ports can stop working until the EC hibernates (30 seconds off on battery). Before
+such a jump, stop the fan with `framework_tool --fansetduty 0` and the keyboard backlight with
+`framework_tool --kblight 0`, and darken the side LED, by unplugging the charger or with
+`framework_tool --host-command 0x29 1 0 0 0 0 0 0 0 0`.
+
 ```sh
 sudo framework_tool --flash-rw-ec ec.bin
 sudo framework_tool --reboot-ec jump-rw    # powers off at once
@@ -113,6 +132,9 @@ which can make a flash fail, so it is best done on AC.
 - `Dockerfile.test`: the test image, the build image plus what the test suites need, see Tests.
 - `image-tags.sh`: names both images by the hash of the Dockerfiles they are made from.
 - `build.sh` and `test.sh`: build the firmware and run one test step, inside the images, in CI and locally.
+- `zephyr/` and `apply-zephyr-patches.sh`: fixes from upstream Zephyr which the Zephyr commit of the release lacks, as
+  patches, which `build.sh` and `test.sh` apply to the image's Zephyr. They come from the checkout which is built, so a
+  checkout of one of Framework's releases builds with Zephyr unchanged.
 - `build-ec.sh` and `test-ec.sh`: run `build.sh` and `test.sh` in the images with the local docker.
 - `local-images.sh`: makes an image available to the local docker, from the registry or built from its Dockerfile.
 - `compare-ec.py`: compares two EC images and tells whether they differ only in their version strings and build
