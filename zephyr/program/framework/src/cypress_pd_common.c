@@ -1981,6 +1981,121 @@ int cypd_handle_alert_msg(int controller, int port, int len)
 	return rv;
 }
 
+/*
+ * A port which supplies a partner can report a reverse current error when the AP powers on. The controller then
+ * usually sends a hard reset and the partner connects again within a second, but after a sysjump it sometimes does
+ * neither, and the port detects the partner again only after the partner is unplugged and plugged in again. A Type-C
+ * error recovery does not change that, disabling and enabling the port does. So a port without a partner
+ * PORT_RESTART_CHECK_DELAY after a reverse current error is disabled for PORT_RESTART_DISABLE_TIME. A port is
+ * restarted at most once per AP power-on or resume, so that a partner which causes the error itself does not keep the
+ * port restarting.
+ */
+#define PORT_RESTART_CHECK_DELAY (5 * SECOND)
+#define PORT_RESTART_DISABLE_TIME (2 * SECOND)
+#define ALL_PORTS (BIT(CONFIG_USB_PD_PORT_MAX_COUNT) - 1)
+
+/* Ports, as BIT(port_idx), with a reverse current error which are not checked yet. */
+static atomic_t ports_with_reverse_current;
+/* Ports which were not restarted since the image started or the AP last powered on or resumed. */
+static atomic_t ports_restartable = ALL_PORTS;
+/* Ports which are disabled for a restart. */
+static atomic_t ports_restarting;
+
+static void cypd_allow_port_restarts(void)
+{
+	atomic_set(&ports_restartable, ALL_PORTS);
+}
+DECLARE_HOOK(HOOK_CHIPSET_STARTUP, cypd_allow_port_restarts, HOOK_PRIO_DEFAULT);
+DECLARE_HOOK(HOOK_CHIPSET_RESUME, cypd_allow_port_restarts, HOOK_PRIO_DEFAULT);
+
+static void cypd_port_restart_check_deferred(void)
+{
+	task_set_event(TASK_ID_CYPD, CCG_EVT_PORT_DISABLE);
+}
+DECLARE_DEFERRED(cypd_port_restart_check_deferred);
+
+static void cypd_port_restart_enable_deferred(void)
+{
+	task_set_event(TASK_ID_CYPD, CCG_EVT_PORT_ENABLE);
+}
+DECLARE_DEFERRED(cypd_port_restart_enable_deferred);
+
+/* Returns the PDPORT_ENABLE value with all ports of the controller enabled, except the ones disabled for a restart. */
+static int cypd_enabled_ports(int controller)
+{
+	int ports = BIT(pd_chip_config[controller].support_max_port) - 1;
+
+	return ports & ~(atomic_get(&ports_restarting) >> (controller << 1));
+}
+
+/*
+ * Disables the ports with a reverse current error which have no partner and may be restarted, and enables them again
+ * PORT_RESTART_DISABLE_TIME later.
+ */
+static void cypd_disable_ports_without_partner(void)
+{
+	atomic_val_t ports = atomic_clear(&ports_with_reverse_current);
+	int port_idx;
+
+	for (port_idx = 0; port_idx < CONFIG_USB_PD_PORT_MAX_COUNT; port_idx++) {
+		int controller = port_idx >> 1;
+		int port = port_idx & 1;
+		int typec_status;
+
+		if (!(ports & BIT(port_idx)) || !cypd_contoller_is_powered(controller))
+			continue;
+
+		/* Bit 0 of TYPE_C_STATUS is set while a partner is connected. */
+		if (cypd_read_reg8(controller, CCG_TYPE_C_STATUS_REG(port), &typec_status) != EC_SUCCESS ||
+		    (typec_status & BIT(0)))
+			continue;
+
+		if (!(atomic_get(&ports_restartable) & BIT(port_idx))) {
+			CPRINTS("C%d P%d: no partner after reverse current, restarted already", controller, port);
+			continue;
+		}
+
+		CPRINTS("C%d P%d: no partner after reverse current, restarting the port", controller, port);
+		atomic_clear_bits(&ports_restartable, BIT(port_idx));
+		atomic_or(&ports_restarting, BIT(port_idx));
+		cypd_write_reg8(controller, CCG_PDPORT_ENABLE_REG, cypd_enabled_ports(controller));
+	}
+
+	if (atomic_get(&ports_restarting))
+		hook_call_deferred(&cypd_port_restart_enable_deferred_data, PORT_RESTART_DISABLE_TIME);
+}
+
+/*
+ * Enables the ports which cypd_disable_ports_without_partner() disabled, and tries again PORT_RESTART_DISABLE_TIME
+ * later for a controller which the write failed to reach. It runs at a sysjump too, because the next image does not
+ * know about these ports.
+ */
+static void cypd_enable_restarted_ports(void)
+{
+	atomic_val_t ports = atomic_clear(&ports_restarting);
+	atomic_val_t failed = 0;
+	int controller;
+
+	for (controller = 0; controller < PD_CHIP_COUNT; controller++) {
+		atomic_val_t controller_ports =
+			(BIT(pd_chip_config[controller].support_max_port) - 1) << (controller << 1);
+
+		if (!(ports & controller_ports) || !cypd_contoller_is_powered(controller))
+			continue;
+
+		if (cypd_write_reg8(controller, CCG_PDPORT_ENABLE_REG, cypd_enabled_ports(controller)) != EC_SUCCESS) {
+			CPRINTS("C%d: enabling the restarted ports failed", controller);
+			failed |= ports & controller_ports;
+		}
+	}
+
+	if (failed) {
+		atomic_or(&ports_restarting, failed);
+		hook_call_deferred(&cypd_port_restart_enable_deferred_data, PORT_RESTART_DISABLE_TIME);
+	}
+}
+DECLARE_HOOK(HOOK_SYSJUMP, cypd_enable_restarted_ports, HOOK_PRIO_DEFAULT);
+
 void cypd_port_int(int controller, int port)
 {
 	int i, rv, response_len;
@@ -2119,6 +2234,11 @@ void cypd_port_int(int controller, int port)
 		break;
 	case CCG_RESPONSE_OVER_CURRENT:
 		CPRINTS("CCG_RESPONSE_OVER_CURRENT %d", port_idx);
+		break;
+	case CCG_RESPONSE_REVERSE_CURRENT_ERROR:
+		CPRINTS("CCG_RESPONSE_REVERSE_CURRENT_ERROR %d", port_idx);
+		atomic_or(&ports_with_reverse_current, BIT(port_idx));
+		hook_call_deferred(&cypd_port_restart_check_deferred_data, PORT_RESTART_CHECK_DELAY);
 		break;
 	case CCG_RESPONSE_ALERT_RX:
 		cypd_handle_alert_msg(controller, port, response_len);
@@ -2365,6 +2485,12 @@ void cypd_interrupt_handler_task(void *p)
 				if (cypd_contoller_is_powered(i))
 					perform_error_recovery(i);
 			}
+
+		if (evt & CCG_EVT_PORT_DISABLE)
+			cypd_disable_ports_without_partner();
+
+		if (evt & CCG_EVT_PORT_ENABLE)
+			cypd_enable_restarted_ports();
 
 		/**
 		 * below events communicate with the 2nd pd chip, ignore those if the
