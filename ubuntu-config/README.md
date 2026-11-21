@@ -63,6 +63,12 @@ What the branch ubuntu-config changes in Framework's release 4.0.2, `git log fdb
   ignores writes while the PWM runs. After a jump the PWMs keep running as the previous image left them, so with the
   fan spinning or the side LED lit the new image halted while it started, and the EC restarted in RO. The build
   applies Nuvoton's fix from upstream Zephyr, which Framework's Zephyr lacks, from `zephyr/`.
+- **An expansion card comes back after a reverse current error at power-on**. When the laptop powers on, a PD
+  controller can report a reverse current error on a port which supplies an expansion card, like the HDMI Expansion
+  Card. It then usually sends a hard reset and the card connects again, but after a jump it sometimes does not, and the
+  port detects the card again only after the card is pulled out and inserted again. The EC now disables and enables a
+  port which has no partner 5 seconds after a reverse current error, which brings the card back, at most once per
+  power-on or resume.
 - **Framework's fixes after 4.0.2**, from its later branches and
   [pull request 79](https://github.com/FrameworkComputer/EmbeddedController/pull/79): no crash on garbage PD data, an
   invalid PD port index rejected, the PD charge ceiling applied to the right controller, only F1 to F12 ignoring Fn
