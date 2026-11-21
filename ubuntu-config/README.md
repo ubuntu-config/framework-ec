@@ -92,6 +92,9 @@ What the branch ubuntu-config changes in Framework's release 4.0.2, `git log fdb
   mode keeps the sustainer discharging.
 - **Reads of the fan target stay out of the EC console**. Linux reads the fan target at every read of its hwmon
   attribute, and the EC counts these in its hourly summary of suppressed host commands instead of logging each.
+- **The EC keeps 24 KB of its console output for the host**, which `framework_tool --console recent` reads, instead of
+  4 KB, which hold less than a minute of the output while the laptop boots. The EC's data RAM is 64 KB, of which the
+  firmware then uses about 55 KB.
 
 ### Test repairs
 
