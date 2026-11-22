@@ -312,7 +312,6 @@ void update_dynamic_battery_info(void)
 
 #ifdef CONFIG_CUSTOMIZED_DESIGN
 	struct battery_static_info *const bs = &battery_static[BATT_IDX_MAIN];
-	static int batt_os_percentage;
 	int rsoc_percentage;
 	int design_percentage;
 	static int brc_retry;
@@ -373,9 +372,6 @@ void update_dynamic_battery_info(void)
 		    !curr->batt_is_charging)
 			bd->remaining_capacity = 1;
 #ifdef CONFIG_CUSTOMIZED_DESIGN
-		/* Avoid to show the percentage when battery fully charge */
-		else if (curr->ac && (curr->batt.status & STATUS_FULLY_CHARGED))
-			bd->remaining_capacity = curr->batt.full_capacity;
 		else {
 
 			/*
@@ -462,17 +458,8 @@ void update_dynamic_battery_info(void)
 		tmp |= EC_BATT_FLAG_LEVEL_CRITICAL;
 
 #ifdef CONFIG_CUSTOMIZED_DESIGN
-	batt_os_percentage = (bd->remaining_capacity * 1000) / (curr->batt.full_capacity + 1);
-	/*
-	 * sync with OS battery percentage to avoid battery show charging icon at 100%
-	 * os battery display formula: rounding (remainig / full capacity)*100
-	 */
-	if (curr->ac && batt_os_percentage > 994) {
-		tmp |= EC_BATT_FLAG_DISCHARGING;
-	} else {
-		tmp |= curr->batt_is_charging ? EC_BATT_FLAG_CHARGING :
-						EC_BATT_FLAG_DISCHARGING;
-	}
+	tmp |= curr->batt_is_charging ? EC_BATT_FLAG_CHARGING :
+					EC_BATT_FLAG_DISCHARGING;
 
 	/*
 	 * in ACPI spec _BST(battery status) have a feature
