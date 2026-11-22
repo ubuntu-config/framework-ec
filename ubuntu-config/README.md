@@ -95,6 +95,11 @@ What the branch ubuntu-config changes in Framework's release 4.0.2, `git log fdb
 - **The EC keeps 24 KB of its console output for the host**, which `framework_tool --console recent` reads, instead of
   4 KB, which hold less than a minute of the output while the laptop boots. The EC's data RAM is 64 KB, of which the
   firmware then uses about 55 KB.
+- **A full battery charges again only below 95%** while no charge limit is set. Framework's firmware charges whenever
+  the battery asks for current, and a full battery asks again as soon as its charge drops by a percent, so on AC it
+  stays between 99% and 100%, and connecting AC at 97% charges it to full as well. The EC now keeps a full battery, and
+  a charge of 95% or more when AC is connected or Linux turns its thresholds off, and charges to full only from below
+  95%. Inhibiting the charge or discharging it from Linux works as before.
 
 ### Test repairs
 
