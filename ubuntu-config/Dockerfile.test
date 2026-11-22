@@ -45,10 +45,14 @@ RUN git init -q /mnt/host/source/src/third_party/cryptoc && \
   cd /mnt/host/source/src/third_party/cryptoc && \
   git fetch -q --depth 1 --no-tags https://chromium.googlesource.com/chromiumos/third_party/cryptoc 0dd679081b9c8bfa2583d74e3a17a413709ea362 && \
   git checkout -q FETCH_HEAD
+# Pigweed's nanopb rule creates generator/proto/nanopb_pb2.py in this directory when it is missing or older than the
+# protoc binary, so without it twister's parallel builds create it at the same time, and one of them can import it half
+# written. Generated here, after protoc was installed, it is never written again.
 RUN git init -q /mnt/host/source/src/third_party/zephyr/nanopb && \
   cd /mnt/host/source/src/third_party/zephyr/nanopb && \
   git fetch -q --depth 1 --no-tags https://chromium.googlesource.com/chromiumos/third_party/zephyr/nanopb d388a046ce1cf9b42ebce3aac307946f08e14329 && \
-  git checkout -q FETCH_HEAD
+  git checkout -q FETCH_HEAD && \
+  protoc -Igenerator/proto --python_out=generator/proto generator/proto/nanopb.proto
 RUN git init -q /mnt/host/source/src/third_party/zephyr/picolibc && \
   cd /mnt/host/source/src/third_party/zephyr/picolibc && \
   git fetch -q --depth 1 --no-tags https://chromium.googlesource.com/chromiumos/third_party/zephyr/picolibc 098b654c3c1aae292e364f69993e29106f6ec580 && \
