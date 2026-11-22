@@ -481,14 +481,22 @@ void update_dynamic_battery_info(void)
 	 * and the battery has reached the steady state need to
 	 * clear CHARGING and DISCHARGING flag.
 	 */
-	if (battery_sustainer_enabled()) {
+	if (battery_sustainer_enabled())
 		tmp |= EC_BATT_FLAG_LIMIT_ACTIVE;
-		if (get_chg_ctrl_mode() == CHARGE_CONTROL_IDLE) {
-			tmp &= ~EC_BATT_FLAG_CHARGING;
-			tmp &= ~EC_BATT_FLAG_DISCHARGING;
-		}
-	} else
+	else
 		tmp &= ~EC_BATT_FLAG_LIMIT_ACTIVE;
+
+	/*
+	 * In IDLE on AC, which the sustainer, the hold of a battery near full
+	 * (CONFIG_BATT_RECHARGE_PERCENTAGE) and a host which inhibits the
+	 * charge select, the battery is neither charged nor discharged. Its
+	 * current of about zero would report it as charging, so it is reported
+	 * as neither.
+	 */
+	if (curr->ac && get_chg_ctrl_mode() == CHARGE_CONTROL_IDLE) {
+		tmp &= ~EC_BATT_FLAG_CHARGING;
+		tmp &= ~EC_BATT_FLAG_DISCHARGING;
+	}
 
 #else
 	tmp |= curr->batt_is_charging ? EC_BATT_FLAG_CHARGING :
