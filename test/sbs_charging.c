@@ -1357,6 +1357,112 @@ test_static int test_battery_sustainer_above_upper(void)
 	return EC_SUCCESS;
 }
 
+/*
+ * Without a sustainer, a full battery is held in IDLE from
+ * CONFIG_BATT_RECHARGE_PERCENTAGE up, and so is a charge there when AC is
+ * connected or the host disables the sustainer, and the battery charges to full
+ * again only once its charge falls below that percentage. A mode which the host
+ * sets stays.
+ */
+test_static int test_battery_recharge_percentage(void)
+{
+	int rv;
+
+	test_setup(1);
+	TEST_ASSERT(!battery_sustainer_enabled());
+
+	/* The battery charges below the percentage and through it. */
+	display_soc = 900;
+	wait_charging_state();
+	TEST_ASSERT(get_chg_ctrl_mode() == CHARGE_CONTROL_NORMAL);
+	display_soc = 970;
+	wait_charging_state();
+	TEST_ASSERT(get_chg_ctrl_mode() == CHARGE_CONTROL_NORMAL);
+
+	/* Full, also with a display soc below 100%. */
+	display_soc = 990;
+	is_full = 1;
+	wait_charging_state();
+	TEST_ASSERT(get_chg_ctrl_mode() == CHARGE_CONTROL_IDLE);
+
+	/* The battery asks for current again, but the charge is kept. */
+	is_full = 0;
+	display_soc = 980;
+	wait_charging_state();
+	TEST_ASSERT(get_chg_ctrl_mode() == CHARGE_CONTROL_IDLE);
+	display_soc = 950;
+	wait_charging_state();
+	TEST_ASSERT(get_chg_ctrl_mode() == CHARGE_CONTROL_IDLE);
+
+	/* Below the percentage the battery charges to full again. */
+	display_soc = 940;
+	wait_charging_state();
+	TEST_ASSERT(get_chg_ctrl_mode() == CHARGE_CONTROL_NORMAL);
+	display_soc = 960;
+	wait_charging_state();
+	TEST_ASSERT(get_chg_ctrl_mode() == CHARGE_CONTROL_NORMAL);
+
+	/* Reconnecting AC with the charge from the percentage up keeps it. */
+	gpio_set_level(GPIO_AC_PRESENT, 0);
+	wait_charging_state();
+	TEST_ASSERT(get_chg_ctrl_mode() == CHARGE_CONTROL_NORMAL);
+	gpio_set_level(GPIO_AC_PRESENT, 1);
+	wait_charging_state();
+	TEST_ASSERT(get_chg_ctrl_mode() == CHARGE_CONTROL_IDLE);
+
+	/* Reconnecting AC with the charge below it charges. */
+	gpio_set_level(GPIO_AC_PRESENT, 0);
+	wait_charging_state();
+	display_soc = 940;
+	gpio_set_level(GPIO_AC_PRESENT, 1);
+	wait_charging_state();
+	TEST_ASSERT(get_chg_ctrl_mode() == CHARGE_CONTROL_NORMAL);
+
+	/*
+	 * The host enables a sustainer, which keeps the charge above its
+	 * upper limit, and disables it again with the charge from the
+	 * percentage up, which keeps the charge as well.
+	 */
+	display_soc = 960;
+	rv = sustainer_set_via_hc(3, 70, 80, 0);
+	TEST_ASSERT(rv == EC_RES_SUCCESS);
+	wait_charging_state();
+	TEST_ASSERT(get_chg_ctrl_mode() == CHARGE_CONTROL_IDLE);
+	rv = sustainer_set_via_hc(3, -1, -1, 0);
+	TEST_ASSERT(rv == EC_RES_SUCCESS);
+	wait_charging_state();
+	TEST_ASSERT(!battery_sustainer_enabled());
+	TEST_ASSERT(get_chg_ctrl_mode() == CHARGE_CONTROL_IDLE);
+	display_soc = 940;
+	wait_charging_state();
+	TEST_ASSERT(get_chg_ctrl_mode() == CHARGE_CONTROL_NORMAL);
+
+	/* An inhibited charge stays below the percentage. */
+	rv = charge_control(CHARGE_CONTROL_IDLE);
+	TEST_ASSERT(rv == EC_RES_SUCCESS);
+	display_soc = 900;
+	wait_charging_state();
+	TEST_ASSERT(get_chg_ctrl_mode() == CHARGE_CONTROL_IDLE);
+
+	/* A forced discharge stays with a full battery. */
+	rv = charge_control(CHARGE_CONTROL_DISCHARGE);
+	TEST_ASSERT(rv == EC_RES_SUCCESS);
+	display_soc = 990;
+	is_full = 1;
+	wait_charging_state();
+	TEST_ASSERT(get_chg_ctrl_mode() == CHARGE_CONTROL_DISCHARGE);
+
+	/* Back to NORMAL with a half charged battery. */
+	is_full = 0;
+	display_soc = 500;
+	rv = charge_control(CHARGE_CONTROL_NORMAL);
+	TEST_ASSERT(rv == EC_RES_SUCCESS);
+	wait_charging_state();
+	TEST_ASSERT(get_chg_ctrl_mode() == CHARGE_CONTROL_NORMAL);
+
+	return EC_SUCCESS;
+}
+
 void run_test(int argc, const char **argv)
 {
 	RUN_TEST(test_charge_state);
@@ -1376,6 +1482,7 @@ void run_test(int argc, const char **argv)
 	RUN_TEST(test_battery_sustainer_ac_reconnect);
 	RUN_TEST(test_battery_sustainer_host_set);
 	RUN_TEST(test_battery_sustainer_above_upper);
+	RUN_TEST(test_battery_recharge_percentage);
 	RUN_TEST(test_deep_charge_battery);
 
 	test_print_result();

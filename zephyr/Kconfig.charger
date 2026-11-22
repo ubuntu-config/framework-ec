@@ -325,6 +325,19 @@ endchoice # PLATFORM_EC_CHARGER_DISCHARGE_MODE
 
 endif # PLATFORM_EC_CHARGER_DISCHARGE_ON_AC
 
+config PLATFORM_EC_BATT_RECHARGE_PERCENTAGE
+	int "Charge below which a full battery is charged again"
+	default 0
+	range 0 100
+	help
+	  While no battery sustainer is set, the EC stops charging a battery
+	  which is full, or whose charge is at least this percentage when AC
+	  power is connected or the host disables the sustainer, and charges
+	  it to full again once its charge falls below this percentage, so
+	  that a full battery is not charged whenever its charge drops by a
+	  percent. With 0, the battery charges whenever it asks for current.
+
+
 config PLATFORM_EC_CHARGER_BQ25710_PSYS_SENSING
 	bool "Charger monitors PSYS"
 	default n

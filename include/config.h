@@ -719,6 +719,16 @@
 #define CONFIG_BATT_HOST_FULL_FACTOR 97
 
 /*
+ * While no battery sustainer is set, the EC stops charging a battery which is
+ * full, or whose charge is at least this percentage when AC power is connected
+ * or the host disables the sustainer, and charges it to full again once its
+ * charge falls below this percentage, so that a full battery is not charged
+ * whenever its charge drops by a percent. Undefined, the battery charges
+ * whenever it asks for current.
+ */
+#undef CONFIG_BATT_RECHARGE_PERCENTAGE
+
+/*
  * Expose some data when it is needed.
  * For example, battery disconnect state
  */

@@ -89,6 +89,12 @@ static struct sustain_soc sustain_soc;
  * sustainer set it.
  */
 static bool sustain_hold_in_range;
+/*
+ * Whether the charge control mode is IDLE because the EC holds a battery near
+ * full without a sustainer, for CONFIG_BATT_RECHARGE_PERCENTAGE. Any other
+ * switch of the mode clears it.
+ */
+static bool recharge_hold;
 static struct current_limit {
 	uint32_t value; /* Charge limit to apply, in mA */
 	int soc; /* Minimum battery SoC at which the limit will be applied. */
@@ -610,6 +616,7 @@ int set_chg_ctrl_mode(enum ec_charge_control_mode mode)
 	local_state.chg_ctl_mode = mode;
 	local_state.manual_current = current;
 	local_state.manual_voltage = voltage;
+	recharge_hold = false;
 
 	return EC_SUCCESS;
 }
@@ -980,7 +987,46 @@ sustain_switch_mode(enum ec_charge_control_mode mode, bool hold_in_range)
 	return new_mode;
 }
 
-static void sustain_battery_soc(void)
+#ifdef CONFIG_BATT_RECHARGE_PERCENTAGE
+#define BATT_RECHARGE_PERCENTAGE CONFIG_BATT_RECHARGE_PERCENTAGE
+#else
+#define BATT_RECHARGE_PERCENTAGE 0
+#endif
+
+/*
+ * Returns the charge control mode for a battery without a sustainer: IDLE for
+ * a battery with a soc of BATT_RECHARGE_PERCENTAGE or more which is full, or
+ * whose soc is there when hold_in_range is set, and NORMAL again once the soc
+ * falls below it. It changes only NORMAL and the IDLE which it set itself, so
+ * a mode which the host or something else set stays.
+ */
+static enum ec_charge_control_mode
+recharge_switch_mode(enum ec_charge_control_mode mode, bool hold_in_range,
+		     bool is_full)
+{
+	int soc = charge_get_display_charge() / 10;
+
+	if (!BATT_RECHARGE_PERCENTAGE)
+		return mode;
+
+	/*
+	 * The battery asks for no current once it is full, but asks again
+	 * when its soc drops by a percent, so a full battery is held in IDLE.
+	 * Framework's display soc, for example, stays below 100% also with a
+	 * full battery, so the soc alone does not tell it.
+	 */
+	if (mode == CHARGE_CONTROL_NORMAL && soc >= BATT_RECHARGE_PERCENTAGE &&
+	    (is_full || hold_in_range))
+		return CHARGE_CONTROL_IDLE;
+
+	if (mode == CHARGE_CONTROL_IDLE && recharge_hold &&
+	    soc < BATT_RECHARGE_PERCENTAGE)
+		return CHARGE_CONTROL_NORMAL;
+
+	return mode;
+}
+
+static void sustain_battery_soc(bool is_full)
 {
 	enum ec_charge_control_mode mode = get_chg_ctrl_mode();
 	enum ec_charge_control_mode new_mode;
@@ -999,15 +1045,21 @@ static void sustain_battery_soc(void)
 	sustain_hold_in_range = false;
 
 	/* If the battery is not present, nothing to do. */
-	if (curr.batt.is_present != BP_YES || !battery_sustainer_enabled())
+	if (curr.batt.is_present != BP_YES)
 		return;
 
-	new_mode = sustain_switch_mode(mode, hold_in_range);
+	if (battery_sustainer_enabled())
+		new_mode = sustain_switch_mode(mode, hold_in_range);
+	else
+		new_mode = recharge_switch_mode(mode, hold_in_range, is_full);
 
 	if (new_mode == mode)
 		return;
 
 	rv = set_chg_ctrl_mode(new_mode);
+	if (rv == EC_SUCCESS && !battery_sustainer_enabled() &&
+	    new_mode == CHARGE_CONTROL_IDLE)
+		recharge_hold = true;
 	CPRINTS("%s: %s control mode to %s", __func__,
 		rv == EC_SUCCESS ? "Switched" : "Failed to switch",
 		mode_text[new_mode]);
@@ -1630,7 +1682,7 @@ void charger_task(void *u)
 		is_full = calc_is_full();
 
 		/* Run battery sustainer (no-op if not applicable). */
-		sustain_battery_soc();
+		sustain_battery_soc(is_full);
 
 		/* Run battery soc check for setting the current limit. */
 		current_limit_battery_soc();
