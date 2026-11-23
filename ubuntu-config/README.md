@@ -104,8 +104,8 @@ What the branch ubuntu-config changes in Framework's release 4.0.2, `git log fdb
 - **A full battery charges again only below 95%** while no charge limit is set. Framework's firmware charges whenever
   the battery asks for current, and a full battery asks again as soon as its charge drops by a percent, so on AC it
   stays between 99% and 100%, and connecting AC at 97% charges it to full as well. The EC now keeps a full battery, and
-  a charge of 95% or more when AC is connected or Linux turns its thresholds off, and charges to full only from below
-  95%. Inhibiting the charge or discharging it from Linux works as before. While the EC holds the charge, and while
+  a charge of 95% or more when AC is connected, when the EC starts on AC, and when Linux or the BIOS turns its limit
+  off, and charges to full only from below 95%. Inhibiting the charge or discharging it from Linux works as before. While the EC holds the charge, and while
   Linux inhibits it, Linux shows the battery as not charging, where Framework's firmware showed it as charging at 0 W.
 - **The battery percentage is the battery's charge on AC as well**. On AC, Framework's firmware reports a battery whose
   gauge still flags it as fully charged as full, so Linux showed 100% for a battery held at 96%, and from 99.5% on AC
