@@ -86,6 +86,12 @@ void charger_sustainer_reset(void)
 {
 	old_charger_limit = 0;
 	battery_sustainer_set(-1, -1);
+	/*
+	 * Without a sustainer, a charge near full is kept as when the host
+	 * disables the sustainer, unless the override asks for a full charge.
+	 */
+	if (!(charging_maximum_level & CHG_LIMIT_OVERRIDE))
+		battery_sustainer_hold_in_range();
 	set_chg_ctrl_mode(CHARGE_CONTROL_NORMAL);
 }
 

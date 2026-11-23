@@ -30,6 +30,7 @@ test_static int is_hibernated;
 test_static int override_voltage, override_current, override_usec;
 test_static int display_soc;
 test_static int is_full;
+test_static enum battery_present mock_battery_present = BP_YES;
 
 /* The simulation doesn't really hibernate, so we must reset this ourselves */
 extern timestamp_t shutdown_target_time;
@@ -42,6 +43,12 @@ test_static void reset_mocks(void)
 	override_voltage = override_current = override_usec = 0;
 	shutdown_target_time.val = 0ULL;
 	is_full = 0;
+	mock_battery_present = BP_YES;
+}
+
+enum battery_present battery_is_present(void)
+{
+	return mock_battery_present;
 }
 
 int board_cut_off_battery(void)
@@ -1463,6 +1470,47 @@ test_static int test_battery_recharge_percentage(void)
 	return EC_SUCCESS;
 }
 
+test_static int test_battery_recharge_percentage_hold(void)
+{
+	test_setup(1);
+
+	/*
+	 * AC is connected before the battery is read, as when the EC starts
+	 * on AC, and the charge is kept once the battery is there.
+	 */
+	gpio_set_level(GPIO_AC_PRESENT, 0);
+	display_soc = 960;
+	wait_charging_state();
+	mock_battery_present = BP_NO;
+	gpio_set_level(GPIO_AC_PRESENT, 1);
+	wait_charging_state();
+	mock_battery_present = BP_YES;
+	wait_charging_state();
+	TEST_ASSERT(get_chg_ctrl_mode() == CHARGE_CONTROL_IDLE);
+
+	/*
+	 * The EC disables the sustainer for its own charge limit and returns
+	 * to NORMAL, which keeps the charge with the hold.
+	 */
+	battery_sustainer_set(-1, -1);
+	battery_sustainer_hold_in_range();
+	set_chg_ctrl_mode(CHARGE_CONTROL_NORMAL);
+	wait_charging_state();
+	TEST_ASSERT(get_chg_ctrl_mode() == CHARGE_CONTROL_IDLE);
+
+	/* NORMAL without the hold charges the battery. */
+	set_chg_ctrl_mode(CHARGE_CONTROL_NORMAL);
+	wait_charging_state();
+	TEST_ASSERT(get_chg_ctrl_mode() == CHARGE_CONTROL_NORMAL);
+
+	/* Back to a half charged battery, which the hold does not keep. */
+	display_soc = 500;
+	wait_charging_state();
+	TEST_ASSERT(get_chg_ctrl_mode() == CHARGE_CONTROL_NORMAL);
+
+	return EC_SUCCESS;
+}
+
 void run_test(int argc, const char **argv)
 {
 	RUN_TEST(test_charge_state);
@@ -1483,6 +1531,7 @@ void run_test(int argc, const char **argv)
 	RUN_TEST(test_battery_sustainer_host_set);
 	RUN_TEST(test_battery_sustainer_above_upper);
 	RUN_TEST(test_battery_recharge_percentage);
+	RUN_TEST(test_battery_recharge_percentage_hold);
 	RUN_TEST(test_deep_charge_battery);
 
 	test_print_result();

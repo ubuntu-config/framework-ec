@@ -400,6 +400,14 @@ int board_want_charger_change_mode(void);
 int battery_sustainer_set(int8_t lower, int8_t upper);
 
 /**
+ * Make the next run of the battery sustainer on AC keep a soc which is already
+ * in range: in the sustain range with a sustainer, and from
+ * CONFIG_BATT_RECHARGE_PERCENTAGE up without one. Connecting AC and the host
+ * setting the sustainer do this as well.
+ */
+void battery_sustainer_hold_in_range(void);
+
+/**
  * return the sustainer is active or not
  * lower and upper == -1 is mean disable
  *

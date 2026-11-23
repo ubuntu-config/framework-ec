@@ -234,6 +234,11 @@ static void battery_sustainer_disable(void)
 	battery_sustainer_set(-1, -1);
 }
 
+void battery_sustainer_hold_in_range(void)
+{
+	sustain_hold_in_range = true;
+}
+
 static const char *const state_list[] = { "idle", "discharge", "charge",
 					  "precharge" };
 BUILD_ASSERT(ARRAY_SIZE(state_list) == CHARGE_STATE_COUNT);
@@ -1049,15 +1054,20 @@ static void sustain_battery_soc(bool is_full)
 		return;
 
 	/*
-	 * The first run with AC present uses the flag up, also when there is
-	 * nothing to do, so a sustainer which the EC enables later on its own,
-	 * for its own charge limit, still starts by charging to the upper.
+	 * If the battery is not present, nothing to do. The flag waits for it,
+	 * since when the EC starts on AC, its first runs come before the
+	 * battery is read.
 	 */
-	sustain_hold_in_range = false;
-
-	/* If the battery is not present, nothing to do. */
 	if (curr.batt.is_present != BP_YES)
 		return;
+
+	/*
+	 * The first run with AC and the battery present uses the flag up, also
+	 * when there is nothing to do, so a sustainer which the EC enables
+	 * later on its own, for its own charge limit, still starts by charging
+	 * to the upper.
+	 */
+	sustain_hold_in_range = false;
 
 	if (battery_sustainer_enabled())
 		new_mode = sustain_switch_mode(mode, hold_in_range);
@@ -2126,7 +2136,7 @@ charge_command_charge_control(struct host_cmd_handler_args *args)
 			} else {
 				sustain_soc.flags = p->flags;
 			}
-			sustain_hold_in_range = true;
+			battery_sustainer_hold_in_range();
 		} else {
 			battery_sustainer_disable();
 		}

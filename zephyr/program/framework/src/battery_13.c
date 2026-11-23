@@ -288,6 +288,17 @@ __override void board_battery_compensate_params(struct batt_params *batt)
 	batt->flags |= BATT_FLAG_RESPONSIVE;
 	batt_cache.flags |= BATT_FLAG_RESPONSIVE;
 
-	/* override the display charge value for Windows system */
-	batt->display_charge = get_system_percentage();
+	/*
+	 * Override the display charge value for Windows system, with the ratio
+	 * which the host reads from the memory map. Right after the EC starts,
+	 * before the battery info has reached the memory map, the same ratio
+	 * comes from the capacities just read from the battery.
+	 */
+	if (*(uint32_t *)host_get_memmap(EC_MEMMAP_BATT_LFCC) == 0 &&
+	    batt->full_capacity > 0)
+		batt->display_charge = MIN(1000 * batt->remaining_capacity /
+						   (batt->full_capacity + 1),
+					   1000);
+	else
+		batt->display_charge = get_system_percentage();
 }
