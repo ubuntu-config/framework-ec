@@ -90,8 +90,14 @@ What the branch ubuntu-config changes in Framework's release 4.0.2, `git log fdb
   thresholds are set after a full charge, is kept and comes down as the battery discharges without AC, instead of the
   laptop running from its battery on AC until the charge reaches the upper threshold. A host which asks for no idle
   mode keeps the sustainer discharging.
-- **Reads of the fan target stay out of the EC console**. Linux reads the fan target at every read of its hwmon
-  attribute, and the EC counts these in its hourly summary of suppressed host commands instead of logging each.
+- **Reads of the fan target and duty cycle stay out of the EC console**. Linux reads them from the EC at every read of
+  their hwmon attributes, and the EC counts these in its hourly summary of suppressed host commands instead of logging
+  each.
+- **Charge requests are logged when they change the charging**. On AC with the battery not charging, the EC asks the
+  charger for a voltage one step above the battery's, and Framework's firmware logs the request every time the battery
+  voltage moves by that step, every few seconds, which fills the console of 24 KB in about 40 minutes. The EC now logs
+  a request when its current changes, when the battery becomes full or stops being full, and when its voltage changes
+  while it asks for a current.
 - **The EC keeps 24 KB of its console output for the host**, which `framework_tool --console recent` reads, instead of
   4 KB, which hold less than a minute of the output while the laptop boots. The EC's data RAM is 64 KB, of which the
   firmware then uses about 55 KB.
