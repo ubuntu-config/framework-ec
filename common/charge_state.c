@@ -445,6 +445,7 @@ int charge_request(bool use_curr, bool is_full)
 {
 	int r1 = EC_SUCCESS, r2 = EC_SUCCESS, r3 = EC_SUCCESS, r4 = EC_SUCCESS;
 	static int prev_volt, prev_curr;
+	static bool prev_full;
 	bool should_bypass;
 	int voltage = 0, current = 0;
 
@@ -472,8 +473,17 @@ int charge_request(bool use_curr, bool is_full)
 #endif
 	}
 
+	/*
+	 * Without a current, a narrow VDC charger is asked for a voltage one
+	 * step above the battery's, which moves back and forth with every small
+	 * change of the battery voltage. So a change of the voltage is printed
+	 * only while a current is requested, and a battery held or full on AC
+	 * does not fill the console. A change of the current, or of whether the
+	 * battery is full, is always printed.
+	 */
 	if (curr.ac) {
-		if (prev_volt != voltage || prev_curr != current)
+		if (prev_curr != current || prev_full != is_full ||
+		    (current > 0 && prev_volt != voltage))
 			CPRINTS("%s(%dmV, %dmA)", __func__, voltage, current);
 	}
 
@@ -558,6 +568,7 @@ int charge_request(bool use_curr, bool is_full)
 
 	prev_volt = voltage;
 	prev_curr = current;
+	prev_full = is_full;
 
 	return EC_SUCCESS;
 }
