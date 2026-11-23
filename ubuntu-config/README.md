@@ -144,7 +144,17 @@ sudo framework_tool --versions             # after the restart: "Current image: 
 ```
 
 Flashing RO as well makes the firmware permanent. An RO which does not boot can be recovered only through the EC's
-debug pads with a UART adapter, so only an image which ran well in RW is flashed there.
+debug pads with a UART adapter, so only an image which ran well in RW is flashed there. `framework_tool` flashes RO
+only with `--force`, also with `--dry-run`, and reads the written RO back to verify it. The EC runs from its RAM, so a
+broken RO shows only at the next EC reset. If `framework_tool` reports "RO verify fail!", flash RO again, or flash
+the backup back with `--force --flash-ro-ec`, before anything resets the EC.
+
+```sh
+sudo framework_tool --dump-ec-flash ec-flash-before.bin   # backup of both copies
+sudo framework_tool --force --flash-ro-ec ec.bin
+sudo framework_tool --reboot-ec reboot                    # powers off at once, the EC starts in RO
+sudo framework_tool --sysinfo                             # after the restart: "Current image: RO"
+```
 
 On battery, the EC's replies to host commands arrive corrupted from time to time while the processor uses its deepest
 idle state ([SoftwareFirmwareIssueTracker issue 308](https://github.com/FrameworkComputer/SoftwareFirmwareIssueTracker/issues/308)),
